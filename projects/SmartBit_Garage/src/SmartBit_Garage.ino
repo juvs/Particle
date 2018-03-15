@@ -2,7 +2,7 @@
  * Project SmartBit_Garage
  * Description:
  * Author: Juvenal Guzman
- * Date: 11 MAR 2018
+ * Date: 15 MAR 2018
  */
 
 // This #include statement was automatically added by the Particle IDE.
@@ -15,7 +15,7 @@
 
 // Definiciones
 #define SECS_PER_MIN  (60UL)
-#define REPORT_DOOR_OPEN_TIMEOUT (1 * SECS_PER_MIN)
+#define DOOR_OPEN_TIMEOUT(_mins_) (_mins_ * SECS_PER_MIN)
 
 #define RELAY1_PIN D0 //Apertura/Cierre manual
 #define RELAY2_PIN D1 //Power del garage
@@ -55,67 +55,75 @@ int overrideMode = 0;
 int lockMode = -1;
 //State when call from ST
 int fromSTAction = 0;
-//Hom many minutes the garage door still open
+//How many seconds the garage door is open
 unsigned long openTime = 0;
+//How many minutes to report garage still open
+int minsOpenTimeout = 1;
 
- void setup() {
-     Serial.begin(9600);
-     delay(3000); // Allow board to settle
+void setup() {
+    Serial.begin(9600);
+    delay(3000); // Allow board to settle
 
-     //Read last state from memory...
-     EEPROM.get(0, lockMode);
+    //Read last state from memory...
+    EEPROM.get(0, lockMode);
 
-     //For SmartThings configuration and callbacks
-     stLib.begin();
-     stLib.setCallbackFor("lock", &callbackLock);
-     stLib.setCallbackFor("status", &callbackStatus);
-     stLib.setCallbackFor("open", &callbackOpenCloseState);
-     stLib.setCallbackFor("close", &callbackOpenCloseState);
-     stLib.setCallbackFor("override", &callbackOverride);
+    //For SmartThings configuration and callbacks
+    stLib.begin();
+    stLib.callbackForAction("lock", &callbackLock);
+    stLib.callbackForAction("status", &callbackStatus);
+    stLib.callbackForAction("open", &callbackOpenCloseState);
+    stLib.callbackForAction("close", &callbackOpenCloseState);
+    stLib.callbackForAction("override", &callbackOverride);
+    stLib.callbackForAction("reboot", &callbackReboot);
 
-     Particle.variable("overrideMode", overrideMode);
-     Particle.variable("relayOpen", relayOpenStatusLocal);
-     Particle.variable("lockMode", lockMode);
-     Particle.variable("openTime", openTime);
+    stLib.monitorVariable("openTimeout", minsOpenTimeout);
 
-     Particle.function("open", doOpen);
-     Particle.function("override", doOverride);
-     Particle.function("lock", doLock);
+    //stLib.callbackForVarSet(&callbackVariableSet);
 
-     //IMPORTANTE!
-     //Es INPUT_PULLUP ya que no recibe voltaje, cuando es INPUT_PULLDOWN es porque va a conectarse a voltaje
-     //Setup de PIN para el boton
-     pinMode(BUTTON_OPEN_CLOSE_PIN, INPUT_PULLUP);
-     //Particle.publish("button", "Configurado en D4!");
+    Particle.variable("overrideMode", overrideMode);
+    Particle.variable("relayOpen", relayOpenStatusLocal);
+    Particle.variable("lockMode", lockMode);
+    Particle.variable("openTime", openTime);
 
-     //Setup de PIN para sensor magnetico
-     pinMode(MAGNETIC_SWITCH_PIN, INPUT_PULLUP);
-     //Particle.publish("magnetic_switch", "Configurado en D2!");
+    Particle.function("open", doOpen);
+    Particle.function("override", doOverride);
+    Particle.function("lock", doLock);
+    Particle.function("reboot", doReboot);
 
-     pinMode(READY_LED_PIN, OUTPUT);
-     digitalWrite(READY_LED_PIN, LOW);
+    //IMPORTANTE!
+    //Es INPUT_PULLUP ya que no recibe voltaje, cuando es INPUT_PULLDOWN es porque va a conectarse a voltaje
+    //Setup de PIN para el boton
+    pinMode(BUTTON_OPEN_CLOSE_PIN, INPUT_PULLUP);
+    //Particle.publish("button", "Configurado en D4!");
 
-     // Setup button timers (all in milliseconds / ms)
-     // (These are default if not set, but changeable for convenience)
-     buttonOpenClose.debounceTime   = 20;   // Debounce timer in ms
-     buttonOpenClose.multiclickTime = 250;  // Time limit for multi clicks
-     buttonOpenClose.longClickTime  = 1000; // time until "held-down clicks" register
+    //Setup de PIN para sensor magnetico
+    pinMode(MAGNETIC_SWITCH_PIN, INPUT_PULLUP);
+    //Particle.publish("magnetic_switch", "Configurado en D2!");
+
+    pinMode(READY_LED_PIN, OUTPUT);
+    digitalWrite(READY_LED_PIN, LOW);
+
+    // Setup button timers (all in milliseconds / ms)
+    // (These are default if not set, but changeable for convenience)
+    buttonOpenClose.debounceTime   = 20;   // Debounce timer in ms
+    buttonOpenClose.multiclickTime = 250;  // Time limit for multi clicks
+    buttonOpenClose.longClickTime  = 1000; // time until "held-down clicks" register
 }
 
- void loop() {
-     stLib.process(); //Process possible messages from SmartThings
+void loop() {
+    stLib.process(); //Process possible messages from SmartThings
 
-     ledReadyOnOnce();
-     monitorMagneticSwitch();
-     checkOpenDoorTime();
-     checkButtonOpenCloseStatus();
-     updateRelayStatus();
+    ledReadyOnOnce();
+    monitorMagneticSwitch();
+    checkOpenDoorTime();
+    checkButtonOpenCloseStatus();
+    updateRelayStatus();
  }
 
 void checkOpenDoorTime() {
     if (openTime > 0) {
         long diff = (millis() - openTime) / 1000;
-        if (diff >= REPORT_DOOR_OPEN_TIMEOUT) {
+        if (diff >= DOOR_OPEN_TIMEOUT(minsOpenTimeout)) {
             openTime = millis();
             notifyGarageOpenTimeoutToSTHub();
         }
@@ -202,6 +210,10 @@ void monitorMagneticSwitch() {
      changeLockMode();
  }
 
+ int doReboot(String command) {
+     System.reset();
+ }
+
 //SmartThings callbacks
 void callbackLock() {
     changeLockMode();
@@ -217,6 +229,14 @@ void callbackOpenCloseState() {
 
 void callbackOverride() {
     changeOverrideMode();
+}
+
+void callbackReboot() {
+    System.reset();
+}
+
+void callbackVariableSet(String param) {
+    Serial.println("Variable " + param + " changed!");
 }
 
 //Local functions to change state
