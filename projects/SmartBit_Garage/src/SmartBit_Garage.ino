@@ -66,6 +66,7 @@ void setup() {
 
     //Read last state from memory...
     EEPROM.get(0, lockMode);
+    EEPROM.get(1, overrideMode);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -169,13 +170,13 @@ void monitorMagneticSwitch() {
         notifyStatusToSTHub();
         openTime = 0; //Restart time for open garage door
         if (overrideMode == 1 && (lockMode == 0 || lockMode == -1)) {
-            delay(100);
+            //delay(10);
             relayPower.toggle();
             delay(2000);
             relayPower.toggle();
         }
      }
-     delay(100);
+     delay(50);
 }
 
 void checkButtonOpenCloseStatus() {
@@ -271,6 +272,7 @@ void changeOverrideMode() {
         Particle.publish("override", "OFF");
         overrideMode = 0;
     }
+    EEPROM.put(1, overrideMode);
     notifyStatusToSTHub();
 }
 
@@ -278,11 +280,6 @@ void changeLockMode(int changeTo) {
     //TODO Possible blink of led ready to visual notify is locked
     if (doorStatus != -1 || doorStatus == 0) { //If door is close you can locked
         lockMode = changeTo;
-        /*if (lockMode == 0 || lockMode == -1) {
-            lockMode = 1;
-        } else if (lockMode == 1 || lockMode == -1) {
-            lockMode = 0;
-        }*/
         EEPROM.put(0, lockMode);
     }
     notifyStatusToSTHub();
