@@ -6,7 +6,7 @@
  */
 
 // This #include statement was automatically added by the Particle IDE.
-#include "SmartThingsLib.h"
+#include <SmartThingsLib.h>
 #include <ArduinoJson.h>
 #include "application.h"
 #include "relay-lib.h"
@@ -41,7 +41,7 @@ RelayLib relayLock = RelayLib(RELAY3_PIN, LOW, 1);
 RelayLib pulseRelay;
 
 //Relay variables
-int relayOpenStatusLocal = 0;
+int requestOpenClose = 0;
 // Button results
 int function = 0;
 // Led ready state
@@ -70,6 +70,7 @@ void setup() {
     //For SmartThings configuration and callbacks
     stLib.begin();
     stLib.callbackForAction("lock", &callbackLock);
+    stLib.callbackForAction("unlock", &callbackUnlock);
     stLib.callbackForAction("status", &callbackStatus);
     stLib.callbackForAction("open", &callbackOpenCloseState);
     stLib.callbackForAction("close", &callbackOpenCloseState);
@@ -81,13 +82,15 @@ void setup() {
     //stLib.callbackForVarSet(&callbackVariableSet);
 
     Particle.variable("overrideMode", overrideMode);
-    Particle.variable("relayOpen", relayOpenStatusLocal);
+    Particle.variable("openClose", requestOpenClose);
     Particle.variable("lockMode", lockMode);
     Particle.variable("openTime", openTime);
+    Particle.variable("doorStatus", doorStatus);
 
     Particle.function("open", doOpen);
     Particle.function("override", doOverride);
     Particle.function("lock", doLock);
+    Particle.function("unlock", doUnlock);
     Particle.function("reboot", doReboot);
 
     //IMPORTANTE!
@@ -123,7 +126,7 @@ void loop() {
 void checkOpenDoorTime() {
     if (openTime > 0) {
         long diff = (millis() - openTime) / 1000;
-        if (diff >= DOOR_OPEN_TIMEOUT(minsOpenTimeout)) {
+        if (minsOpenTimeout != 0 && diff >= DOOR_OPEN_TIMEOUT(minsOpenTimeout)) { //If minsOpenTimeout is zero don't notify
             openTime = millis();
             notifyGarageOpenTimeoutToSTHub();
         }
@@ -138,21 +141,20 @@ void ledReadyOnOnce() {
 }
 
 void updateRelayStatus() {
-     if (relayOpenStatusLocal == 1) {
-         relayOpenStatusLocal = 0;
-         if (lockMode == 0 || lockMode == -1) { //Solo cuando no estamos en modo lock
-             Particle.publish("garage", "Open/Close");
-             relayOpenClose.pulse(250);
-         }
-     }
+    if (requestOpenClose == 1) {
+        requestOpenClose = 0;
+        if (lockMode == 0 || lockMode == -1) { //Solo cuando no estamos en modo lock
+            relayOpenClose.pulse(250);
+        }
+    }
 
-     if (lockMode == 1 && (doorStatus != -1 || doorStatus == 0)) { //Poner el modo lock, pero siempre que no este abierto
-         relayLock.on();
-         relayPower.on();
-     } else if (lockMode == 0)  {
-         relayLock.off();
-         relayPower.off();
-     }
+    if (lockMode == 1 && (doorStatus != -1 || doorStatus == 0)) { //Lock only if is closed
+        relayLock.on();
+        relayPower.on();
+    } else if (lockMode == 0)  {
+        relayLock.off();
+        relayPower.off();
+    }
 }
 
 void monitorMagneticSwitch() {
@@ -160,16 +162,14 @@ void monitorMagneticSwitch() {
     int currentStatus = digitalRead(MAGNETIC_SWITCH_PIN);
     if (currentStatus == HIGH && (doorStatus == -1 || doorStatus == 0)) { //El sensor esta en NO entonces LOW
         doorStatus = 1;
-        Particle.publish("magnetic_switch", "GARAGE IS OPEN");
         notifyStatusToSTHub();
         openTime = millis(); //Starts to count time for check open garage door
     } else if (currentStatus == LOW && (doorStatus == -1 || doorStatus == 1)) {
         doorStatus = 0;
-        Particle.publish("magnetic_switch", "GARAGE IS CLOSE");
         notifyStatusToSTHub();
         openTime = 0; //Restart time for open garage door
         if (overrideMode == 1 && (lockMode == 0 || lockMode == -1)) {
-            delay(500);
+            delay(100);
             relayPower.toggle();
             delay(2000);
             relayPower.toggle();
@@ -178,61 +178,74 @@ void monitorMagneticSwitch() {
      delay(100);
 }
 
- void checkButtonOpenCloseStatus() {
-     // Update button state
-     buttonOpenClose.Update();
+void checkButtonOpenCloseStatus() {
+    // Update button state
+    buttonOpenClose.Update();
 
-     // Save click codes in LEDfunction, as click codes are reset at next Update()
-     if(buttonOpenClose.clicks != 0) function = buttonOpenClose.clicks;
+    // Save click codes in LEDfunction, as click codes are reset at next Update()
+    if(buttonOpenClose.clicks != 0) function = buttonOpenClose.clicks;
 
-     if(function == 1)  { //SINGLE click
-         relayOpenStatusLocal = 1;
-     }
+    if(function == 1)  { //SINGLE click
+        requestOpenClose = 1;
+    }
 
-     if(function == -1) { //SINGLE LONG click
-         changeOverrideMode();
-     }
+    if(function == -1) { //SINGLE LONG click
+        changeOverrideMode();
+    }
 
-     function = 0;
-     delay(5);
- }
+    function = 0;
+    delay(5);
+}
 
 //Particle functions to call from app Particle
- int doOpen(String command) {
-     changeOpenCloseState();
- }
-
- int doOverride(String command) {
-     changeOverrideMode();
- }
-
- int doLock(String command) {
-     changeLockMode();
- }
-
- int doReboot(String command) {
-     System.reset();
- }
-
-//SmartThings callbacks
-void callbackLock() {
-    changeLockMode();
-}
-
-void callbackStatus() {
-    notifyStatusToSTHub();
-}
-
-void callbackOpenCloseState() {
+int doOpen(String command) {
     changeOpenCloseState();
 }
 
-void callbackOverride() {
+int doOverride(String command) {
     changeOverrideMode();
 }
 
-void callbackReboot() {
+int doLock(String command) {
+    changeLockMode(1);
+}
+
+int doUnlock(String command) {
+    changeLockMode(0);
+}
+
+int doReboot(String command) {
     System.reset();
+}
+
+//SmartThings callbacks
+String callbackStatus() {
+    return String(getStatusJson());
+}
+
+String callbackLock() {
+    changeLockMode(1);
+    return String(getStatusJson());
+}
+
+String callbackUnlock() {
+    changeLockMode(0);
+    return String(getStatusJson());
+}
+
+String callbackOverride() {
+    changeOverrideMode();
+    return String(getStatusJson());
+}
+
+String callbackOpenCloseState() {
+    changeOpenCloseState();
+    return "200";
+}
+
+String callbackReboot() {
+    System.reset();
+    return "200";
 }
 
 void callbackVariableSet(String param) {
@@ -241,8 +254,8 @@ void callbackVariableSet(String param) {
 
 //Local functions to change state
 void changeOpenCloseState() {
-    if (lockMode == 0) { //Is not lockmode active
-        relayOpenStatusLocal = 1;
+    if (lockMode == 0) { //Is unlocked
+        requestOpenClose = 1;
         fromSTAction = 1;
     } else if (lockMode == 1) { //Always update state because of openning state on ST
         notifyStatusToSTHub();
@@ -261,40 +274,44 @@ void changeOverrideMode() {
     notifyStatusToSTHub();
 }
 
-void changeLockMode() {
-    if (doorStatus != -1 || doorStatus == 0) { //If door is not open
-        if (lockMode == 0 || lockMode == -1) {
-            //TODO Possible blink of led ready to visual notify this mode
-            Particle.publish("lock", "ON");
+void changeLockMode(int changeTo) {
+    //TODO Possible blink of led ready to visual notify is locked
+    if (doorStatus != -1 || doorStatus == 0) { //If door is close you can locked
+        lockMode = changeTo;
+        /*if (lockMode == 0 || lockMode == -1) {
             lockMode = 1;
         } else if (lockMode == 1 || lockMode == -1) {
-            Particle.publish("lock", "OFF");
             lockMode = 0;
-        }
+        }*/
         EEPROM.put(0, lockMode);
     }
     notifyStatusToSTHub();
 }
 
 //Send to SmartThings the current device status
- void notifyStatusToSTHub() {
-     String uptime;
-     stLib.getUpTime(uptime);
+void notifyStatusToSTHub() {
+    stLib.notifyHub(String(getStatusJson()));
+}
 
-     statusJson["lockStatus"] = lockMode == -1 ? "unknow" : lockMode == 1 ? "locked" : "unlock";
-     statusJson["door"] = doorStatus == -1 ? "unknow" : doorStatus == 0 ? "closed" : "open";
-     statusJson["override"] = overrideMode == 0 ? "off" : "on";
-     statusJson["uptime"] = uptime.c_str();
-     statusJson["fromAction"]  = fromSTAction == 1 ? "true" : "false";
-     fromSTAction = 0;
-     char jsonChar[512];
-     statusJson.printTo(jsonChar);
-     stLib.notifyHub(String(jsonChar));
- }
+//Notify SmartThings for open garate timeout
+void notifyGarageOpenTimeoutToSTHub() {
+    notifyJson["alarm"] = "open_garage_timeout";
+    char jsonChar[512];
+    notifyJson.printTo(jsonChar);
+    stLib.notifyHub(String(jsonChar));
+}
 
- void notifyGarageOpenTimeoutToSTHub() {
-     notifyJson["alarm"] = "open_garage_timeout";
-     char jsonChar[512];
-     notifyJson.printTo(jsonChar);
-     stLib.notifyHub(String(jsonChar));
- }
+//Build json string for status device
+char *getStatusJson() {
+    String uptime;
+    stLib.getUpTime(uptime);
+    statusJson["lockStatus"] = lockMode == -1 ? "unknow" : lockMode == 1 ? "locked" : "unlock";
+    statusJson["door"] = doorStatus == -1 ? "unknow" : doorStatus == 0 ? "closed" : "open";
+    statusJson["override"] = overrideMode == 0 ? "off" : "on";
+    statusJson["uptime"] = uptime.c_str();
+    statusJson["fromAction"]  = fromSTAction == 1 ? "true" : "false";
+    fromSTAction = 0;
+    char jsonChar[512];
+    statusJson.printTo(jsonChar);
+    return jsonChar;
+}
