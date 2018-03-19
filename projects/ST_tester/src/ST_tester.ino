@@ -43,7 +43,7 @@ void loop() {
     delay(500);
 }
 
-void callbackAction() {
+String callbackAction() {
     //Do your stuff...
     Serial.println("Call from /action url, do some!");
     if (turnOn == 0) {
@@ -53,6 +53,7 @@ void callbackAction() {
         turnOn = 0;
         digitalWrite(D7, LOW);
     }
+    return "";
 }
 
 void callbackVariableSet(String param) {
