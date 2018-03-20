@@ -163,10 +163,12 @@ void monitorMagneticSwitch() {
     int currentStatus = digitalRead(MAGNETIC_SWITCH_PIN);
     if (currentStatus == HIGH && (doorStatus == -1 || doorStatus == 0)) { //El sensor esta en NO entonces LOW
         doorStatus = 1;
+        fromSTAction = 1; //Report to ST this action and put on feed
         notifyStatusToSTHub();
         openTime = millis(); //Starts to count time for check open garage door
     } else if (currentStatus == LOW && (doorStatus == -1 || doorStatus == 1)) {
         doorStatus = 0;
+        fromSTAction = 1; //Report to ST this action and put on feed
         notifyStatusToSTHub();
         openTime = 0; //Restart time for open garage door
         if (overrideMode == 1 && (lockMode == 0 || lockMode == -1)) {
