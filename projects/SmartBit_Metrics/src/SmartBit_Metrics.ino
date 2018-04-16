@@ -1,22 +1,27 @@
 #include "A1335Lib.h"
 
+#define READY_LED_PIN D6 //Led listo
+
+//Para el sensor del angulo magnetico del gas
 A1335State s;
+
+// Led ready state
+int ledRdyOn = 0;
 
 void setup()
 {
   Wire.begin();
 
   Serial.begin(9600);
-  delay(5000);
+  delay(3000);
   Serial.println("\nI2C Scanner");
+
+  pinMode(READY_LED_PIN, OUTPUT);
+  digitalWrite(READY_LED_PIN, LOW);
 }
 
-int reading = 0;
-float angle;
-int state = LOW;
-
 void loop() {
-
+  ledReadyOnOnce();
     if(readDeviceState(0x0C, &s)){
 
         //Serial.print(F("==== Sensor: "));
@@ -75,4 +80,11 @@ void loop() {
     }
 
     delay(500);
+}
+
+void ledReadyOnOnce() {
+    if (!ledRdyOn) {
+        ledRdyOn = 1;
+        digitalWrite(READY_LED_PIN, HIGH);
+    }
 }

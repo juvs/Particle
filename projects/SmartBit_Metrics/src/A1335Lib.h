@@ -109,8 +109,5 @@ const char XERROR_FLAGS[][FLAGS_STRLEN] = {
   "SRAM_Soft"
 };
 
-
-
-
 //String commandIn = "";
 //bool line = false;

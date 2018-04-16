@@ -40,8 +40,6 @@ bool writeMemoryCheck(uint8_t deviceaddress, uint8_t eeaddress, byte* wdata)
   return (rdata[0] == wdata[0] && rdata[1] == wdata[1]);
 }
 
-
-
 bool clearStatusRegisters(uint8_t deviceaddress){
   byte data[] = {
     0b00000111, // Clear STA, ERR & XERR
@@ -49,8 +47,6 @@ bool clearStatusRegisters(uint8_t deviceaddress){
   };
   return writeMemory(deviceaddress, 0x1E, data);
 }
-
-
 
 bool checkDefaultSettings(A1335State* state){
   for(uint8_t i = 0; i < 8; i++){
@@ -61,7 +57,6 @@ bool checkDefaultSettings(A1335State* state){
   }
   return true;
 }
-
 
 bool readDeviceState(uint8_t deviceaddress, A1335State* state){
 
@@ -93,10 +88,8 @@ bool readDeviceState(uint8_t deviceaddress, A1335State* state){
     (float)((uint16_t)((state->rawData[5][0] & 0xf) << 8) | state->rawData[5][1])
      / 10.0; // Gauss to milliTesla
 
-
   return true;
 }
-
 
 void SerialPrintFlags(uint16_t flags, const char meanings[][FLAGS_STRLEN], uint8_t num){
   bool first = true;
