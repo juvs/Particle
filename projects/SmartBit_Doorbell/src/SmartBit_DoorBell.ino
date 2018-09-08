@@ -11,25 +11,29 @@
 #include <HttpClient.h>
 #include <clickButton.h>
 
+SYSTEM_THREAD(ENABLED);
+SYSTEM_MODE(MANUAL);
+
 //Definitions
 #define BUTTON_BELL_PIN D0
 #define RELAY1_PIN D1
 #define LED_READY_PIN D2
+#define LED_TEST_PIN D7
 
 SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.0");
 ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 
 //Pre-declare timer functions for timers
-void initPulseRelay(int delayTime);
-void endPulseRelay(void);
-void initTimerNotifySTHub(int delayTime);
-void doNotifyST(void);
-void playTTS();
+// void initPulseRelay(int delayTime);
+// void endPulseRelay(void);
+// void initTimerNotifySTHub(int delayTime);
+// void doNotifyST(void);
+// void playTTS();
 
 //Timers
-Timer timerPulseRelay(500, endPulseRelay, true);
-Timer timerdoNotifyST(1000, doNotifyST, true);
-Timer timerPlayTTS(2500, playTTS, true);
+// Timer timerPulseRelay(500, endPulseRelay, true);
+// Timer timerdoNotifyST(1000, doNotifyST, true);
+// Timer timerPlayTTS(2500, playTTS, true);
 
 //Relays
 RelayLib relayBell = RelayLib(RELAY1_PIN, LOW, 0);
@@ -62,7 +66,7 @@ int wifiSignalLvl = 3;
 void setup() {
     // Put initialization like pinMode and begin functions here.
     Serial.begin(9600);
-    delay(1500); // Allow board to settle
+    //delay(1500); // Allow board to settle
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -81,6 +85,7 @@ void setup() {
     //Setup de PIN para el boton
     pinMode(BUTTON_BELL_PIN, INPUT_PULLUP);
     pinMode(LED_READY_PIN, OUTPUT);
+    pinMode(LED_TEST_PIN, OUTPUT);
 
     // Setup button timers (all in milliseconds / ms)
     // (These are default if not set, but changeable for convenience)
@@ -88,7 +93,7 @@ void setup() {
     buttonBell.multiclickTime = 250;  // Time limit for multi clicks
     buttonBell.longClickTime  = 1000; // time until "held-down clicks" register
 
-    digitalWrite(LED_READY_PIN, HIGH);
+    //digitalWrite(LED_READY_PIN, HIGH);
 }
 
 // loop() runs over and over again, as quickly as it can execute.
@@ -115,34 +120,38 @@ void checkButtonBellStatus() {
 }
 
 void updateRelayStatus() {
-    if (relayBellStatus == 1 && !timerPulseRelay.isActive()) {
-        relayBellStatus = 0;
-        initPulseRelay(2500);
-        initPlayTTSTimer(3000); //Al finalizar el sonido de la campana
-
+    if (relayBellStatus == 1) {
         long timeOut = 60000 * 1; //Minutos en milisegundos
         long diffTime =  millis() - lastTimeRing;
         if (lastTimeRing == 0 ||  diffTime >= timeOut) {
             bool success;
             lastTimeRing = millis();
             bellStatus = "ringing";
-            initTimerNotifySTHub(1500);
+            doNotifyST();
+        }
+        initPulseRelay(2500);
+        relayBellStatus = 0;
+    } else {
+        long timeOut = 60000 * 1; //Minutos en milisegundos
+        long diffTime =  millis() - lastTimeRing;
+        if (bellStatus == "ringing" && diffTime >= timeOut) {
+            log("Notify change state to idle");
+            bellStatus = "idle";
+            doNotifyST();
         }
     }
 }
 
-void initPlayTTSTimer(int delayTime) {
-    timerPlayTTS.changePeriod(delayTime);
-    timerPlayTTS.start();
-}
-
 void playTTS() {
-    timerPlayTTS.stop();
-    if (vlcSrvIp.length() > 0 && vlcSrvPort > 0) {
+    log("playTTS...");
+    if (vlcSrvIp.length() > 0 && vlcSrvPort > 0 && WiFi.ready()) {
         HttpClient http;
-         // Headers currently need to be set at init, useful for API keys etc.
+
+        String credentials = String("Basic " + vlcSrvAuth).c_str();
+        char cCredentials[sizeof(credentials)];
+        strcpy(cCredentials, credentials.c_str());
         http_header_t headers[] = {
-             { "Authorization" , "Basic " + vlcSrvAuth},
+             { "Authorization" , cCredentials},
              { "Accept" , "*/*"},
              { NULL, NULL } // NOTE: Always terminate headers with NULL
         };
@@ -159,37 +168,34 @@ void playTTS() {
         http.get(request, response, headers);
 
         if (response.status == 200) {
-            Serial.println("playTTS OK!");
+            log("playTTS OK!");
         } else {
-            Serial.println("playTTS ERROR! " + String(response.status) + " " + String(response.body));
+            log("playTTS ERROR! " + String(response.status) + " " + String(response.body));
         }
+    } else {
+        log("No server IP, port or WiFi device connected to playTTS");
     }
-}
-
-void initTimerNotifySTHub(int delayTime) {
-    timerdoNotifyST.changePeriod(delayTime);
-    timerdoNotifyST.start();
 }
 
 void doNotifyST(void) {
-    timerdoNotifyST.stop();
     notifyStatusToSTHub();
-    if (bellStatus == "ringing") {
-        bellStatus = "idle";
-        initTimerNotifySTHub(60000 * 1); //Despues de un minuto notificamos inactivo
-    }
+    // if (bellStatus == "ringing") {
+    //     bellStatus = "idle";
+    //     initTimerNotifySTHub(60000 * 1); //Despues de un minuto notificamos inactivo
+    // }
 }
 
 //Para el pulso del relay sin usar delay
 void initPulseRelay(int delayTime) {
+    log("Ringing...");
     relayBell.toggle();
-    timerPulseRelay.changePeriod(delayTime);
-    timerPulseRelay.start();
-}
-
-void endPulseRelay(void) {
-    timerPulseRelay.stop();
+    digitalWrite(LED_TEST_PIN, HIGH); //For test
+    delay(delayTime);
     relayBell.toggle();
+    log("Ring off");
+    digitalWrite(LED_TEST_PIN, LOW);
+    delay(500);
+    playTTS();
 }
 
 //Send to SmartThings  the current device status
@@ -206,11 +212,11 @@ void endPulseRelay(void) {
  }
 
  //SmartThings callbacks
-void callbackStatus() {
+String callbackStatus() {
     notifyStatusToSTHub();
 }
 
-void callbackReboot() {
+String callbackReboot() {
     System.reset();
 }
 
@@ -221,4 +227,8 @@ int signalLvl(String cmd) {
 
 int doReboot(String command) {
     System.reset();
+}
+
+void log(String msg) {
+    Serial.println(String("[SmartBit DoorBell] " + msg));
 }
