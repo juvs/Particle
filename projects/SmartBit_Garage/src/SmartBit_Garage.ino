@@ -223,7 +223,9 @@ int doReboot(String command) {
 
 //SmartThings callbacks
 String callbackStatus() {
-    return String(getStatusJson());
+    String status = getStatusJson();
+    Serial.println(status);
+    return String(status);
 }
 
 String callbackLock() {
@@ -301,7 +303,7 @@ void notifyGarageOpenTimeoutToSTHub() {
 }
 
 //Build json string for status device
-char *getStatusJson() {
+String getStatusJson() {
     String uptime;
     stLib.getUpTime(uptime);
     statusJson["lockStatus"] = lockMode == -1 ? "unknow" : lockMode == 1 ? "locked" : "unlock";
@@ -311,6 +313,8 @@ char *getStatusJson() {
     statusJson["fromAction"]  = fromSTAction == 1 ? "true" : "false";
     fromSTAction = 0;
     char jsonChar[512];
+    String jsonResult;
     statusJson.printTo(jsonChar);
-    return jsonChar;
+    jsonResult = String(jsonChar);
+    return jsonResult;
 }
