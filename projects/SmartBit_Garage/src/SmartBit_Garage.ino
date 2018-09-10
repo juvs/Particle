@@ -313,8 +313,7 @@ String getStatusJson() {
     statusJson["fromAction"]  = fromSTAction == 1 ? "true" : "false";
     fromSTAction = 0;
     char jsonChar[512];
-    String jsonResult;
     statusJson.printTo(jsonChar);
-    jsonResult = String(jsonChar);
+    String jsonResult = String(jsonChar);
     return jsonResult;
 }
