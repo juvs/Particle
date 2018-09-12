@@ -22,17 +22,15 @@ void RelayLib::init(int _relayPin, int _state, int _invert)
 {
   digWrite=digitalWrite;
   relayPin=_relayPin;
-  invert = _invert;
+  invert=_invert;
   pinMode(relayPin, OUTPUT);
 
   if (_state == LOW) {
     relayState=LOW;
-    if (_invert == 1) relayState=HIGH;
     off();
   }
   else {
     relayState=HIGH;
-    if (_invert == 1) relayState=LOW;
     on();
   }
 }
@@ -40,16 +38,15 @@ void RelayLib::init(int _relayPin, int _state, int _invert)
 void RelayLib::init(dig_write_func_t* _digWrite, int _relayPin, int _state, int _invert) {
   digWrite=_digWrite;
   relayPin=_relayPin;
-  invert = _invert;
+  invert=_invert;
+  pinMode(relayPin, OUTPUT);
 
   if (_state == LOW) {
     relayState=LOW;
-    if (_invert == 1) relayState=HIGH;
     off();
   }
   else {
     relayState=HIGH;
-    if (_invert == 1) relayState=LOW;
     on();
   }
 }
@@ -59,7 +56,7 @@ void RelayLib::on()
 {
   int value = HIGH;
   if (invert == 1) value = LOW;
-  digitalWrite(relayPin, value);
+  digWrite(relayPin, value);
   relayState=value;
 }
 
@@ -68,7 +65,7 @@ void RelayLib::off()
 {
   int value = LOW;
   if (invert == 1) value = HIGH;
-  digitalWrite(relayPin, value);
+  digWrite(relayPin, value);
   relayState=value;
 }
 

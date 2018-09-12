@@ -10,14 +10,15 @@
 #include <ArduinoJson.h>
 #include <HttpClient.h>
 #include <clickButton.h>
+#include <Base64.h>
 
 SYSTEM_THREAD(ENABLED);
 SYSTEM_MODE(MANUAL);
 
 //Definitions
-#define BUTTON_BELL_PIN D0
-#define RELAY1_PIN D1
-#define LED_READY_PIN D2
+#define BUTTON_BELL_PIN D2
+#define RELAY1_PIN D0
+#define LED_READY_PIN D1
 #define LED_TEST_PIN D7
 
 SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.0");
@@ -36,7 +37,7 @@ ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 // Timer timerPlayTTS(2500, playTTS, true);
 
 //Relays
-RelayLib relayBell = RelayLib(RELAY1_PIN, LOW, 0);
+//RelayLib relayBell = RelayLib(RELAY1_PIN, HIGH, 1);
 
 //Relay variables
 int relayBellStatus = 0;
@@ -44,13 +45,17 @@ int relayBellStatus = 0;
 //Button results
 int function = 0;
 
+//For connected flag
+int connected = 0;
+
 //Last time bell ring
 unsigned long lastTimeRing = 0;
 
  // **** FOR VLC CALL **** //
-String vlcSrvIp = "192.168.1.61";
+String vlcSrvIp = ""; //"192.168.1.61";
 int vlcSrvPort = 8080;
-String vlcSrvAuth = "OmRlc2NvbmNoaXMwMQ==";
+String vlcSrvAuthUser = "";
+String vlcSrvAuthPass = ""; //"OmRlc2NvbmNoaXMwMQ==";
 
 //Json status response
 StaticJsonBuffer<200> jsonBufferStatus;
@@ -68,14 +73,26 @@ void setup() {
     Serial.begin(9600);
     //delay(1500); // Allow board to settle
 
+    //Read last state from memory...
+    EEPROM.get(0, vlcSrvIp);
+    EEPROM.get(1, vlcSrvPort);
+    EEPROM.get(2, vlcSrvAuthUser);
+    EEPROM.get(3, vlcSrvAuthPass);
+
     //For SmartThings configuration and callbacks
     stLib.begin();
     stLib.callbackForAction("status", &callbackStatus);
     stLib.callbackForAction("reboot", &callbackReboot);
+    stLib.callbackForAction("info", &callbackInfo);
 
     stLib.monitorVariable("vlcSrvIp", vlcSrvIp);
     stLib.monitorVariable("vlcSrvPort", vlcSrvPort);
-    stLib.monitorVariable("vlcSrvAuth", vlcSrvAuth);
+    stLib.monitorVariable("vlcSrvAuthUser", vlcSrvAuthUser);
+    stLib.monitorVariable("vlcSrvAuthPass", vlcSrvAuthPass);
+
+    //A callback that notifies when a variable change using configSet call, applies to all variables register using monitorVariable
+    stLib.callbackForVarSet(&callbackVariableSet);
+
 
     Particle.function("signalLvl", signalLvl);
     Particle.function("reboot", doReboot);
@@ -86,6 +103,7 @@ void setup() {
     pinMode(BUTTON_BELL_PIN, INPUT_PULLUP);
     pinMode(LED_READY_PIN, OUTPUT);
     pinMode(LED_TEST_PIN, OUTPUT);
+    pinMode(RELAY1_PIN, OUTPUT);
 
     // Setup button timers (all in milliseconds / ms)
     // (These are default if not set, but changeable for convenience)
@@ -93,11 +111,12 @@ void setup() {
     buttonBell.multiclickTime = 250;  // Time limit for multi clicks
     buttonBell.longClickTime  = 1000; // time until "held-down clicks" register
 
-    //digitalWrite(LED_READY_PIN, HIGH);
+    digitalWrite(RELAY1_PIN, HIGH);
 }
 
 // loop() runs over and over again, as quickly as it can execute.
 void loop() {
+    checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
     // The core of your code will likely live here.
     checkButtonBellStatus();
@@ -106,6 +125,15 @@ void loop() {
 }
 
 // **** LOCAL FUNCTIONS **** //
+void checkWiFiReady() {
+    if (WiFi.ready() && connected == 0) {
+        connected = 1;
+        digitalWrite(LED_READY_PIN, HIGH);
+    } else {
+        connected = 0;
+    }
+}
+
 void checkButtonBellStatus() {
     // Update button state
     buttonBell.Update();
@@ -147,11 +175,19 @@ void playTTS() {
     if (vlcSrvIp.length() > 0 && vlcSrvPort > 0 && WiFi.ready()) {
         HttpClient http;
 
-        String credentials = String("Basic " + vlcSrvAuth).c_str();
-        char cCredentials[sizeof(credentials)];
+        // String credentials = String("Basic " + vlcSrvAuth).c_str();
+        // char cCredentials[sizeof(credentials)];
+        // strcpy(cCredentials, credentials.c_str());
+        String credentials = String(vlcSrvAuthUser + ":" + vlcSrvAuthPass);
+        int inputLen = sizeof(credentials);
+        char cCredentials[inputLen];
         strcpy(cCredentials, credentials.c_str());
+        int encodedLen = base64_enc_len(inputLen);
+        char encodedCredentials[encodedLen];
+        log("VLC Auth " + String(encodedCredentials));
+        base64_encode(encodedCredentials, cCredentials, inputLen);
         http_header_t headers[] = {
-             { "Authorization" , cCredentials},
+             { "Authorization" , encodedCredentials},
              { "Accept" , "*/*"},
              { NULL, NULL } // NOTE: Always terminate headers with NULL
         };
@@ -178,46 +214,62 @@ void playTTS() {
 }
 
 void doNotifyST(void) {
-    notifyStatusToSTHub();
-    // if (bellStatus == "ringing") {
-    //     bellStatus = "idle";
-    //     initTimerNotifySTHub(60000 * 1); //Despues de un minuto notificamos inactivo
-    // }
+    notifyStatusToSTHub(getStatusJson());
 }
 
 //Para el pulso del relay sin usar delay
 void initPulseRelay(int delayTime) {
     log("Ringing...");
-    relayBell.toggle();
-    digitalWrite(LED_TEST_PIN, HIGH); //For test
+    //For test
+    digitalWrite(RELAY1_PIN, LOW);
+    digitalWrite(LED_TEST_PIN, HIGH);
+
+    //relayBell.toggle();
     delay(delayTime);
-    relayBell.toggle();
+
     log("Ring off");
+    //relayBell.toggle();
+    //For test
+    digitalWrite(RELAY1_PIN, HIGH);
     digitalWrite(LED_TEST_PIN, LOW);
+
     delay(500);
     playTTS();
 }
 
 //Send to SmartThings  the current device status
- void notifyStatusToSTHub() {
-     String uptime;
-     stLib.getUpTime(uptime);
-
-     statusJson["signalLvl"] = wifiSignalLvl;
-     statusJson["action"] = bellStatus.c_str();
-     statusJson["uptime"] = uptime.c_str();
-     char jsonChar[512];
-     statusJson.printTo(jsonChar);
-     stLib.notifyHub(String(jsonChar));
- }
+void notifyStatusToSTHub(String json) {
+    stLib.notifyHub(json);
+}
 
  //SmartThings callbacks
 String callbackStatus() {
-    notifyStatusToSTHub();
+    String json = getStatusJson();
+    notifyStatusToSTHub(json);
+    return json;
 }
 
 String callbackReboot() {
     System.reset();
+}
+
+String callbackInfo() {
+    stLib.showInfo();
+    return "ok";
+}
+
+void callbackVariableSet(String var) {
+    //When the variable change, do some usefull thing on this device...
+    Serial.println("Variable " + var + " changed!");
+    if (var == "vlcSrvIp") {
+        EEPROM.put(0, vlcSrvIp);
+    } else if (var == "vlcSrvPort") {
+        EEPROM.put(1, vlcSrvPort);
+    } else if (var == "vlcSrvAuthUser") {
+        EEPROM.put(2, vlcSrvAuthUser);
+    } else if (var == "vlcSrvAuthPass") {
+        EEPROM.put(3, vlcSrvAuthPass);
+    }
 }
 
 //Particle functions
@@ -227,6 +279,21 @@ int signalLvl(String cmd) {
 
 int doReboot(String command) {
     System.reset();
+}
+
+//Local helper functions
+//Build json string for status device
+String getStatusJson() {
+    String uptime;
+    stLib.getUpTime(uptime);
+
+    statusJson["signalLvl"] = wifiSignalLvl;
+    statusJson["action"] = bellStatus.c_str();
+    statusJson["uptime"] = uptime.c_str();
+    char jsonChar[512];
+    statusJson.printTo(jsonChar);
+    String jsonResult = String(jsonChar);
+    return jsonResult;
 }
 
 void log(String msg) {
