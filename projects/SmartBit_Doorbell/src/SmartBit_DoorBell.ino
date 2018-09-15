@@ -7,15 +7,21 @@
 #include "application.h"
 #include "relay-lib.h"
 #include <SmartThingsLib.h>
+#include <SoftAPLib.h>
 #include <ArduinoJson.h>
 #include <HttpClient.h>
 #include <clickButton.h>
 #include <Base64.h>
 
+// Initialize SoftAP for WiFi management
+STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
+
 SYSTEM_THREAD(ENABLED);
 SYSTEM_MODE(MANUAL);
 
 //Definitions
+const int STRING_BUF_SIZE = 256;
+
 #define BUTTON_BELL_PIN D2
 #define RELAY1_PIN D0
 #define LED_READY_PIN D1
@@ -53,7 +59,7 @@ unsigned long lastTimeRing = 0;
 
  // **** FOR VLC CALL **** //
 String vlcSrvIp = ""; //"192.168.1.61";
-int vlcSrvPort = 8080;
+int vlcSrvPort = 0; //8080
 String vlcSrvAuthUser = "";
 String vlcSrvAuthPass = ""; //"OmRlc2NvbmNoaXMwMQ==";
 
@@ -67,6 +73,11 @@ String bellStatus = "idle";
 //3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
 int wifiSignalLvl = 3;
 
+int addr_p1 = 0; //Server IP
+int addr_p2 = addr_p1 + 256; //Server Port
+int addr_p3 = addr_p2 + 4; // Server user
+int addr_p4 = addr_p2 + 256; //Server password
+
 // setup() runs once, when the device is first turned on.
 void setup() {
     // Put initialization like pinMode and begin functions here.
@@ -74,10 +85,11 @@ void setup() {
     //delay(1500); // Allow board to settle
 
     //Read last state from memory...
-    EEPROM.get(0, vlcSrvIp);
-    EEPROM.get(1, vlcSrvPort);
-    EEPROM.get(2, vlcSrvAuthUser);
-    EEPROM.get(3, vlcSrvAuthPass);
+    //EEPROM.get(0, vlcSrvIp);
+    getStringFromEEPROM(addr_p1, vlcSrvIp);
+    EEPROM.get(addr_p2, vlcSrvPort);
+    getStringFromEEPROM(addr_p3, vlcSrvAuthUser);
+    getStringFromEEPROM(addr_p4, vlcSrvAuthPass);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -175,19 +187,22 @@ void playTTS() {
     if (vlcSrvIp.length() > 0 && vlcSrvPort > 0 && WiFi.ready()) {
         HttpClient http;
 
-        // String credentials = String("Basic " + vlcSrvAuth).c_str();
-        // char cCredentials[sizeof(credentials)];
-        // strcpy(cCredentials, credentials.c_str());
         String credentials = String(vlcSrvAuthUser + ":" + vlcSrvAuthPass);
-        int inputLen = sizeof(credentials);
+        //log("VLC credentials " + credentials);
+        int inputLen = strlen(credentials);
         char cCredentials[inputLen];
         strcpy(cCredentials, credentials.c_str());
+        cCredentials[inputLen] = '\0';
         int encodedLen = base64_enc_len(inputLen);
         char encodedCredentials[encodedLen];
-        log("VLC Auth " + String(encodedCredentials));
         base64_encode(encodedCredentials, cCredentials, inputLen);
+        log("playTTS - VLC Auth " + String(encodedCredentials));
+
+        String authorization = String("Basic " + String(encodedCredentials));
+        char cAuthorization[strlen(authorization)];
+        strcpy(cAuthorization, authorization.c_str());
         http_header_t headers[] = {
-             { "Authorization" , encodedCredentials},
+             { "Authorization" , cAuthorization},
              { "Accept" , "*/*"},
              { NULL, NULL } // NOTE: Always terminate headers with NULL
         };
@@ -221,16 +236,18 @@ void doNotifyST(void) {
 void initPulseRelay(int delayTime) {
     log("Ringing...");
     //For test
-    digitalWrite(RELAY1_PIN, LOW);
     digitalWrite(LED_TEST_PIN, HIGH);
 
-    //relayBell.toggle();
-    delay(delayTime);
+    for (int i = 0; i < 3; i++) {
+        log("   - Ringing " + String(i));
+        digitalWrite(RELAY1_PIN, LOW);
+        delay(500);
+        digitalWrite(RELAY1_PIN, HIGH);
+        delay(250);
+    }
 
-    log("Ring off");
-    //relayBell.toggle();
     //For test
-    digitalWrite(RELAY1_PIN, HIGH);
+    log("Ring off");
     digitalWrite(LED_TEST_PIN, LOW);
 
     delay(500);
@@ -255,20 +272,29 @@ String callbackReboot() {
 
 String callbackInfo() {
     stLib.showInfo();
+    log("bellStatus : " + bellStatus);
+    log("wifiSignalLvl : " + String(wifiSignalLvl));
+    log("vlcSrvIp : " + String(vlcSrvIp));
+    log("vlcSrvPort : " + String(vlcSrvPort));
+    log("vlcSrvAuthUser : " + String(vlcSrvAuthUser));
+    log("vlcSrvAuthPass : " + String(vlcSrvAuthPass));
     return "ok";
 }
 
 void callbackVariableSet(String var) {
     //When the variable change, do some usefull thing on this device...
-    Serial.println("Variable " + var + " changed!");
     if (var == "vlcSrvIp") {
-        EEPROM.put(0, vlcSrvIp);
+        log("Variable " + var + " changed!, value : " + String(vlcSrvIp));
+        setStringToEEPROM(addr_p1, vlcSrvIp);
     } else if (var == "vlcSrvPort") {
-        EEPROM.put(1, vlcSrvPort);
+        log("Variable " + var + " changed!, value : " + String(vlcSrvPort));
+        EEPROM.put(addr_p2, vlcSrvPort);
     } else if (var == "vlcSrvAuthUser") {
-        EEPROM.put(2, vlcSrvAuthUser);
+        log("Variable " + var + " changed!, value : " + String(vlcSrvAuthUser));
+        setStringToEEPROM(addr_p3, vlcSrvAuthUser);
     } else if (var == "vlcSrvAuthPass") {
-        EEPROM.put(3, vlcSrvAuthPass);
+        log("Variable " + var + " changed!, value : " + String(vlcSrvAuthPass));
+        setStringToEEPROM(addr_p4, vlcSrvAuthPass);
     }
 }
 
@@ -298,4 +324,19 @@ String getStatusJson() {
 
 void log(String msg) {
     Serial.println(String("[SmartBit DoorBell] " + msg));
+}
+
+void getStringFromEEPROM(int addr, String &value) {
+    char stringBuf[STRING_BUF_SIZE];
+    EEPROM.get(addr, stringBuf);
+    stringBuf[sizeof(stringBuf) - 1] = 0; // make sure it's null terminated
+    // Initialize a String object from the buffer
+    value = String(stringBuf);
+}
+
+void setStringToEEPROM(int addr, String data) {
+    char value[STRING_BUF_SIZE];
+    strcpy(value, data.c_str());
+    value[STRING_BUF_SIZE - 1] = '\0'; // lazy way to make sure to have the string terminated
+    EEPROM.put(addr, value);
 }
