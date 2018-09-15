@@ -134,6 +134,7 @@ void loop() {
     checkButtonBellStatus();
     updateRelayStatus();
     wifiSignalLvl = WiFi.RSSI();
+    delay(50);
 }
 
 // **** LOCAL FUNCTIONS **** //
@@ -141,8 +142,9 @@ void checkWiFiReady() {
     if (WiFi.ready() && connected == 0) {
         connected = 1;
         digitalWrite(LED_READY_PIN, HIGH);
-    } else {
+    } else if (!WiFi.ready() && connected == 1) {
         connected = 0;
+        digitalWrite(LED_READY_PIN, LOW);
     }
 }
 
@@ -272,12 +274,13 @@ String callbackReboot() {
 
 String callbackInfo() {
     stLib.showInfo();
-    log("bellStatus : " + bellStatus);
-    log("wifiSignalLvl : " + String(wifiSignalLvl));
-    log("vlcSrvIp : " + String(vlcSrvIp));
-    log("vlcSrvPort : " + String(vlcSrvPort));
-    log("vlcSrvAuthUser : " + String(vlcSrvAuthUser));
-    log("vlcSrvAuthPass : " + String(vlcSrvAuthPass));
+    log("bellStatus        : " + bellStatus);
+    log("WiFi connected to : " + String(WiFi.SSID()));
+    log("WiFi SignalLvl    : " + String(wifiSignalLvl));
+    log("vlcSrvIp          : " + String(vlcSrvIp));
+    log("vlcSrvPort        : " + String(vlcSrvPort));
+    log("vlcSrvAuthUser    : " + String(vlcSrvAuthUser));
+    log("vlcSrvAuthPass    : " + String(vlcSrvAuthPass));
     return "ok";
 }
 
