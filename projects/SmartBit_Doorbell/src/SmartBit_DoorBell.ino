@@ -27,7 +27,8 @@ const int STRING_BUF_SIZE = 256;
 #define LED_READY_PIN D1
 #define LED_TEST_PIN D7
 
-SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.0");
+ApplicationWatchdog wd(10000, System.reset, 1536);
+SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.1");
 ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 
 //Pre-declare timer functions for timers
