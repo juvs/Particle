@@ -55,7 +55,7 @@ void setup() {
 
     Serial.begin(9600);
     delay(3000);
-    Serial.println("\nSmartBit Metrics Ready!\n");
+    log("Ready!");
 
     pinMode(READY_LED_PIN, OUTPUT);
     digitalWrite(READY_LED_PIN, LOW);
@@ -69,7 +69,7 @@ void loop() {
     processLevelTank(rangeTank1, tank1Level, numReadings, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth, offsetSensor);
     processLevelTank(rangeTank2, tank2Level, numReadings, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth, offsetSensor);
     hasToPresentValues();
-    delay(500);
+    delay(50);
 }
 
 void ledReadyOnOnce() {
@@ -83,31 +83,34 @@ void hasToPresentValues() {
     if (presentValues >= SENSORS) {
         presentValues = 0;
 
-        Serial.print(F("    Angle:  "));
-        Serial.print(averageAngle);
-        Serial.print(F("°"));
-        Serial.print(F(", Temp:  "));
-        Serial.print(averageTemp);
-        Serial.println(F("°C"));
+        String angle = "Angle : ";
+        angle += String(averageAngle);
+        angle += "°";
+        angle += ", Temp : ";
+        angle += String(averageTemp);
+        angle += " °C";
+        log(angle);
 
-        Serial.print(F("    Tank 1, distance:  "));
-        Serial.print(averageTank1 - offsetSensor);
-        Serial.print(F(" cms, Level:  "));
-        Serial.print(tank1Level);
-        Serial.println(F(" %"));
+        String tank = "Tank 1, distance: ";
+        tank += String(averageTank1 - offsetSensor);
+        tank += " cms, Level: ";
+        tank += String(tank1Level);
+        tank += " %";
+        log(tank);
 
-        Serial.print(F("    Tank 2, distance:  "));
-        Serial.print(averageTank2 - offsetSensor);
-        Serial.print(F(" cms, Level:  "));
-        Serial.print(tank2Level);
-        Serial.println(F(" %"));
+        tank = "Tank 2, distance: ";
+        tank += String(averageTank2 - offsetSensor);
+        tank += " cms, Level: ";
+        tank += String(tank1Level);
+        tank += " %";
+        log(tank);
     }
 }
 
 void processAngleTempReading() {
     if(readDeviceState(0x0C, &s)){
         if (calculatingLegend == 1) {
-            Serial.println("Calculating data, 1 minute to refresh...");
+            log("[Angle] Calculating data, 1 minute to refresh...");
             calculatingLegend = 0;
         }
         // subtract the last reading:
@@ -136,7 +139,7 @@ void processAngleTempReading() {
 
         if(s.status_flags & 0b1000){
             clearStatusRegisters(0x0C);
-            Serial.println(F("Cleared Flags because of Reset Condition; Rescanning..."));
+            log("[Angle] Cleared Flags because of Reset Condition; Rescanning...");
         }
     }
 }
@@ -173,4 +176,8 @@ void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings,
         pctLvl = 100 - pctLvl;
         tankLevel = pctLvl;
     }
+}
+
+void log(String msg) {
+    Serial.println(String("[SmartBit Metrics] " + msg));
 }
