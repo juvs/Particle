@@ -11,7 +11,8 @@
 #include "application.h"
 #include "relay-lib.h"
 #include <clickButton.h>
-//#include <SparkCorePolledTimer.h>
+
+ApplicationWatchdog wd(15000, System.reset, 1536);
 
 // Definiciones
 #define SECS_PER_MIN  (60UL)
@@ -24,10 +25,10 @@
 #define MAGNETIC_SWITCH_PIN D3 //Sensor apertura/cierre garage
 #define BUTTON_OPEN_CLOSE_PIN D4 //Boton para apertura/cierre
 #define BUTTON_OPEN_CLOSE_PIN_NUM 4 //Boton para apertura/cierre
-#define READY_LED_PIN D5 //Led listo
+#define LED_READY_PIN D5 //Led listo
 
 ClickButton buttonOpenClose(BUTTON_OPEN_CLOSE_PIN_NUM, LOW, CLICKBTN_PULLUP);
-SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "1.0.0");
+SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.0");
 
 StaticJsonBuffer<200> jsonBufferStatus;
 StaticJsonBuffer<200> jsonBufferNotify;
@@ -45,12 +46,12 @@ int requestOpenClose = 0;
 // Button results
 int function = 0;
 // Led ready state
-int ledRdy_On = 0;
+int connected = 0;
 //Magnetic sensor
 // door 1 status
 int doorStatus = -1;
 //Para el manejo del modo override
-int overrideMode = 0;
+int overrideMode = 1;
 //Para el manejo del modo lock
 int lockMode = -1;
 //State when call from ST
@@ -104,8 +105,8 @@ void setup() {
     pinMode(MAGNETIC_SWITCH_PIN, INPUT_PULLUP);
     //Particle.publish("magnetic_switch", "Configurado en D2!");
 
-    pinMode(READY_LED_PIN, OUTPUT);
-    digitalWrite(READY_LED_PIN, LOW);
+    pinMode(LED_READY_PIN, OUTPUT);
+    digitalWrite(LED_READY_PIN, LOW);
 
     // Setup button timers (all in milliseconds / ms)
     // (These are default if not set, but changeable for convenience)
@@ -115,14 +116,25 @@ void setup() {
 }
 
 void loop() {
+    checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
 
-    ledReadyOnOnce();
     monitorMagneticSwitch();
     checkOpenDoorTime();
     checkButtonOpenCloseStatus();
     updateRelayStatus();
  }
+
+// **** LOCAL FUNCTIONS **** //
+void checkWiFiReady() {
+    if (WiFi.ready() && connected == 0) {
+        connected = 1;
+        digitalWrite(LED_READY_PIN, HIGH);
+    } else if (!WiFi.ready() && connected == 1) {
+        connected = 0;
+        digitalWrite(LED_READY_PIN, LOW);
+    }
+}
 
 void checkOpenDoorTime() {
     if (openTime > 0) {
@@ -131,13 +143,6 @@ void checkOpenDoorTime() {
             openTime = millis();
             notifyGarageOpenTimeoutToSTHub();
         }
-    }
-}
-
-void ledReadyOnOnce() {
-    if (!ledRdy_On) {
-        ledRdy_On = 1;
-        digitalWrite(READY_LED_PIN, HIGH);
     }
 }
 
