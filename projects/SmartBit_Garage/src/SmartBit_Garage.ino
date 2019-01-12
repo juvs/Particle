@@ -12,8 +12,6 @@
 #include "relay-lib.h"
 #include <clickButton.h>
 
-ApplicationWatchdog wd(15000, System.reset, 1536);
-
 // Definiciones
 #define SECS_PER_MIN  (60UL)
 #define DOOR_OPEN_TIMEOUT(_mins_) (_mins_ * SECS_PER_MIN)
@@ -27,8 +25,9 @@ ApplicationWatchdog wd(15000, System.reset, 1536);
 #define BUTTON_OPEN_CLOSE_PIN_NUM 4 //Boton para apertura/cierre
 #define LED_READY_PIN D5 //Led listo
 
+ApplicationWatchdog wd(10000, System.reset, 1536);
+SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.1");
 ClickButton buttonOpenClose(BUTTON_OPEN_CLOSE_PIN_NUM, LOW, CLICKBTN_PULLUP);
-SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.0");
 
 StaticJsonBuffer<200> jsonBufferStatus;
 StaticJsonBuffer<200> jsonBufferNotify;
@@ -61,13 +60,16 @@ unsigned long openTime = 0;
 //How many minutes to report garage still open
 int minsOpenTimeout = 1;
 
+int addr_ep1 = 0;
+int addr_ep2 = 2;
+
 void setup() {
     Serial.begin(9600);
-    delay(3000); // Allow board to settle
+    //delay(3000); // Allow board to settle
 
     //Read last state from memory...
-    EEPROM.get(0, lockMode);
-    EEPROM.get(1, overrideMode);
+    EEPROM.get(addr_ep1, lockMode);
+    EEPROM.get(addr_ep2, overrideMode);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -281,7 +283,7 @@ void changeOverrideMode() {
         Particle.publish("override", "OFF");
         overrideMode = 0;
     }
-    EEPROM.put(1, overrideMode);
+    EEPROM.put(addr_ep2, overrideMode);
     notifyStatusToSTHub();
 }
 
@@ -289,7 +291,7 @@ void changeLockMode(int changeTo) {
     //TODO Possible blink of led ready to visual notify is locked
     if (doorStatus != -1 || doorStatus == 0) { //If door is close you can locked
         lockMode = changeTo;
-        EEPROM.put(0, lockMode);
+        EEPROM.put(addr_ep1, lockMode);
     }
     notifyStatusToSTHub();
 }
