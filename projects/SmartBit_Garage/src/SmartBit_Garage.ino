@@ -12,6 +12,9 @@
 #include "relay-lib.h"
 #include <clickButton.h>
 
+SYSTEM_THREAD(ENABLED);
+SYSTEM_MODE(MANUAL);
+
 // Definiciones
 #define SECS_PER_MIN  (60UL)
 #define DOOR_OPEN_TIMEOUT(_mins_) (_mins_ * SECS_PER_MIN)
@@ -26,7 +29,7 @@
 #define LED_READY_PIN D5 //Led listo
 
 ApplicationWatchdog wd(10000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.1");
+SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.2");
 ClickButton buttonOpenClose(BUTTON_OPEN_CLOSE_PIN_NUM, LOW, CLICKBTN_PULLUP);
 
 StaticJsonBuffer<200> jsonBufferStatus;
@@ -61,7 +64,7 @@ unsigned long openTime = 0;
 int minsOpenTimeout = 1;
 
 int addr_ep1 = 0;
-int addr_ep2 = 2;
+int addr_ep2 = 10;
 
 void setup() {
     Serial.begin(9600);
