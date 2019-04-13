@@ -28,7 +28,7 @@ const int STRING_BUF_SIZE = 256;
 #define LED_TEST_PIN D7
 
 ApplicationWatchdog wd(10000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.10");
+SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.11");
 ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 
 //Pre-declare timer functions for timers
@@ -235,7 +235,7 @@ void playTTS() {
     }
 }
 
-int ringSonoff(String action) {
+int ringSonoff() {
     log("ringSonoff...");
     if (sonoffIp.length() > 0 && WiFi.ready()) {
         HttpClient http;
@@ -246,13 +246,13 @@ int ringSonoff(String action) {
         IPAddress server = WiFi.resolve(sonoffIp);
         request.ip = server;
         request.port = 80;
-        request.path = "/" + action;
+        request.path = "/cm?cmnd=Power%203";
 
         // Get request
         http.get(request, response);
 
         if (response.status == 200) {
-            log("Sonoff " + action + " ok!");
+            log("Sonoff on ok!");
             return 0;
         } else {
             log("Sonoff ERROR! " + String(response.status) + " " + String(response.body));
@@ -281,8 +281,7 @@ void initPulseRelay() {
         digitalWrite(RELAY1_PIN, HIGH);
         delay(250);
     }
-    ringSonoff("on");
-    ringSonoff("off");
+    ringSonoff();
 
     //For test
     log("Ring off");
