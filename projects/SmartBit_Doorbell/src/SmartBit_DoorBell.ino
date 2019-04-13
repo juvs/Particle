@@ -28,7 +28,7 @@ const int STRING_BUF_SIZE = 256;
 #define LED_TEST_PIN D7
 
 ApplicationWatchdog wd(10000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.1");
+SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.10");
 ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 
 //Pre-declare timer functions for timers
@@ -64,9 +64,8 @@ int vlcSrvPort = 0; //8080
 String vlcSrvAuthUser = "";
 String vlcSrvAuthPass = ""; //"OmRlc2NvbmNoaXMwMQ==";
 
-//Json status response
-StaticJsonBuffer<200> jsonBufferStatus;
-JsonObject& statusJson = jsonBufferStatus.createObject();
+// ***** FOR Other bell device *** //
+String sonoffIp = ""; //"192.168.1.83";
 
 //Current status...
 String bellStatus = "idle";
@@ -74,10 +73,11 @@ String bellStatus = "idle";
 //3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
 int wifiSignalLvl = 3;
 
-int addr_p1 = 0; //Server IP
-int addr_p2 = addr_p1 + 256; //Server Port
-int addr_p3 = addr_p2 + 4; // Server user
-int addr_p4 = addr_p2 + 256; //Server password
+int addr_p1 = 0; //VLC Server IP
+int addr_p2 = addr_p1 + 256; //VLC Server Port
+int addr_p3 = addr_p2 + 4; //VLC Server user
+int addr_p4 = addr_p3 + 256; //VLC Server password
+int addr_p5 = addr_p4 + 256; //Other bell relay server IP
 
 // setup() runs once, when the device is first turned on.
 void setup() {
@@ -91,6 +91,7 @@ void setup() {
     EEPROM.get(addr_p2, vlcSrvPort);
     getStringFromEEPROM(addr_p3, vlcSrvAuthUser);
     getStringFromEEPROM(addr_p4, vlcSrvAuthPass);
+    getStringFromEEPROM(addr_p5, sonoffIp);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -98,10 +99,13 @@ void setup() {
     stLib.callbackForAction("reboot", &callbackReboot);
     stLib.callbackForAction("info", &callbackInfo);
 
+    stLib.callbackForAction("test", &callbackTest);
+
     stLib.monitorVariable("vlcSrvIp", vlcSrvIp);
     stLib.monitorVariable("vlcSrvPort", vlcSrvPort);
     stLib.monitorVariable("vlcSrvAuthUser", vlcSrvAuthUser);
     stLib.monitorVariable("vlcSrvAuthPass", vlcSrvAuthPass);
+    stLib.monitorVariable("sonoffIp", sonoffIp);
 
     //A callback that notifies when a variable change using configSet call, applies to all variables register using monitorVariable
     stLib.callbackForVarSet(&callbackVariableSet);
@@ -172,7 +176,7 @@ void updateRelayStatus() {
             bellStatus = "ringing";
             doNotifyST();
         }
-        initPulseRelay(2500);
+        initPulseRelay();
         relayBellStatus = 0;
     } else {
         long timeOut = 60000 * 1; //Minutos en milisegundos
@@ -231,12 +235,41 @@ void playTTS() {
     }
 }
 
+int ringSonoff(String action) {
+    log("ringSonoff...");
+    if (sonoffIp.length() > 0 && WiFi.ready()) {
+        HttpClient http;
+
+        http_request_t request;
+        http_response_t response;
+
+        IPAddress server = WiFi.resolve(sonoffIp);
+        request.ip = server;
+        request.port = 80;
+        request.path = "/" + action;
+
+        // Get request
+        http.get(request, response);
+
+        if (response.status == 200) {
+            log("Sonoff " + action + " ok!");
+            return 0;
+        } else {
+            log("Sonoff ERROR! " + String(response.status) + " " + String(response.body));
+            return -1;
+        }
+    } else {
+        log("No server IP or WiFi device connected for Sonoff");
+        return -1;
+    }
+}
+
 void doNotifyST(void) {
     notifyStatusToSTHub(getStatusJson());
 }
 
 //Para el pulso del relay sin usar delay
-void initPulseRelay(int delayTime) {
+void initPulseRelay() {
     log("Ringing...");
     //For test
     digitalWrite(LED_TEST_PIN, HIGH);
@@ -248,6 +281,8 @@ void initPulseRelay(int delayTime) {
         digitalWrite(RELAY1_PIN, HIGH);
         delay(250);
     }
+    ringSonoff("on");
+    ringSonoff("off");
 
     //For test
     log("Ring off");
@@ -282,6 +317,13 @@ String callbackInfo() {
     log("vlcSrvPort        : " + String(vlcSrvPort));
     log("vlcSrvAuthUser    : " + String(vlcSrvAuthUser));
     log("vlcSrvAuthPass    : " + String(vlcSrvAuthPass));
+    log("sonoffIp          : " + String(sonoffIp));
+    String json = getInfoJson();
+    return json;
+}
+
+String callbackTest() {
+    initPulseRelay();
     return "ok";
 }
 
@@ -299,6 +341,9 @@ void callbackVariableSet(String var) {
     } else if (var == "vlcSrvAuthPass") {
         log("Variable " + var + " changed!, value : " + String(vlcSrvAuthPass));
         setStringToEEPROM(addr_p4, vlcSrvAuthPass);
+    } else if (var == "sonoffIp") {
+        log("Variable " + var + " changed!, value : " + String(sonoffIp));
+        setStringToEEPROM(addr_p5, sonoffIp);
     }
 }
 
@@ -314,15 +359,39 @@ int doReboot(String command) {
 //Local helper functions
 //Build json string for status device
 String getStatusJson() {
+    StaticJsonBuffer<200> jsonBufferStatus;
+    JsonObject& statusJson = jsonBufferStatus.createObject();
     String uptime;
     stLib.getUpTime(uptime);
 
     statusJson["signalLvl"] = wifiSignalLvl;
     statusJson["action"] = bellStatus.c_str();
     statusJson["uptime"] = uptime.c_str();
+
     char jsonChar[512];
+
     statusJson.printTo(jsonChar);
     String jsonResult = String(jsonChar);
+    jsonBufferStatus.clear();
+    return jsonResult;
+}
+
+String getInfoJson() {
+    StaticJsonBuffer<200> jsonBufferStatus;
+    JsonObject& statusJson = jsonBufferStatus.createObject();
+
+    statusJson["bellStatus"] = bellStatus.c_str();
+    statusJson["vlcSrvIp"] = vlcSrvIp.c_str();
+    statusJson["vlcSrvPort"] = vlcSrvPort;
+    statusJson["vlcSrvAuthUser"] = vlcSrvAuthUser.c_str();
+    statusJson["vlcSrvAuthPass"] = vlcSrvAuthPass.c_str();
+    statusJson["sonoffIp"] = sonoffIp.c_str();
+
+    char jsonChar[512];
+
+    statusJson.printTo(jsonChar);
+    String jsonResult = String(jsonChar);
+    jsonBufferStatus.clear();
     return jsonResult;
 }
 
