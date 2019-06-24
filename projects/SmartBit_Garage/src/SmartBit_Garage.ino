@@ -29,7 +29,7 @@ SYSTEM_MODE(MANUAL);
 #define LED_READY_PIN D5 //Led listo
 
 ApplicationWatchdog wd(10000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.2");
+SmartThingsLib stLib("smartbit-garage", "SmartBit Garage", "SmartBit", "2.0.3");
 ClickButton buttonOpenClose(BUTTON_OPEN_CLOSE_PIN_NUM, LOW, CLICKBTN_PULLUP);
 
 StaticJsonBuffer<200> jsonBufferStatus;
@@ -188,7 +188,7 @@ void monitorMagneticSwitch() {
             relayPower.toggle();
         }
      }
-     delay(50);
+     //delay(50);
 }
 
 void checkButtonOpenCloseStatus() {
@@ -207,7 +207,7 @@ void checkButtonOpenCloseStatus() {
     }
 
     function = 0;
-    delay(5);
+    //delay(5);
 }
 
 //Particle functions to call from app Particle
