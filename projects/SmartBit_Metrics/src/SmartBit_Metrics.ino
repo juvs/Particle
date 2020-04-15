@@ -1,27 +1,35 @@
 #include "A1335Lib.h"
 #include "HC-SR04.h"
+#include <SmartThingsLib.h>
+#include <SoftAPLib.h>
+#include <ArduinoJson.h>
 
-#define SENSORS         3
-#define NUM_READINGS    120 // 1 minute of readings
+// Initialize SoftAP for WiFi management
+STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
+
+SYSTEM_THREAD(ENABLED);
+
+ApplicationWatchdog wd(20000, System.reset, 1536);
+SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", "0.0.2");
+
+#define SENSORS 3
+#define NUM_READINGS 120 // 1 minute of readings
 #define TANK_1_PIN_TRIG D3
-#define TANK_1_PIN_ECO  D2
+#define TANK_1_PIN_ECO D2
 #define TANK_2_PIN_TRIG D5
-#define TANK_2_PIN_ECO  D4
-#define READY_LED_PIN   D6 //Led listo
+#define TANK_2_PIN_ECO D4
+#define LED_READY_PIN D6 //Led listo
 
 //Para el sensor del angulo magnetico del gas
 A1335State s;
 
-// Led ready state
-int ledRdyOn = 0;
-
 int const numReadings = NUM_READINGS;
 
 //For magnetic sensor
-int readingsAngle[numReadings];       // the readings from the
-int readIndexAngle = 0;               // the index of the current reading
-int totalAngle = 0;                   // the running total
-int averageAngle = 0;                 // the average
+int readingsAngle[numReadings]; // the readings from the
+int readIndexAngle = 0;         // the index of the current reading
+int totalAngle = 0;             // the running total
+int averageAngle = 0;           // the average
 
 int readingsTemp[numReadings];
 int readIndexTemp = 0;
@@ -29,8 +37,8 @@ int totalTemp = 0;
 int averageTemp = 0;
 
 //For tanks level
-int tankDepth = 47;                   // depth in cms
-int offsetSensor = 66;                // offset from sensor to start lvl in cms
+int tankDepth = 46; // depth in cms
+int offsetTank = 0; // offset from sensor to start lvl in cms (63)
 
 float readingsTank1[numReadings];
 int readIndexTank1 = 0;
@@ -47,40 +55,88 @@ HC_SR04 rangeTank2 = HC_SR04(TANK_2_PIN_TRIG, TANK_2_PIN_ECO);
 int tank1Level = 0L;
 int tank2Level = 0L;
 
-int calculatingLegend = 1;            // to show legend calculating... once
-int presentValues = 0;                 // to present values...
+int calculatingLegend = 1; // to show legend calculating... once
+int presentValues = 0;     // to present values...
 
-void setup() {
+//3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
+int wifiSignalLvl = 3;
+
+//For connected flag
+int connected = 0;
+
+//EEPROM Memory address
+int addr_ep1 = 0;
+int addr_ep2 = 10;
+
+//Json status response
+StaticJsonDocument<200> jsonDoc;
+
+void setup()
+{
     Wire.begin();
-
     Serial.begin(9600);
-    delay(3000);
-    log("Ready!");
 
-    pinMode(READY_LED_PIN, OUTPUT);
-    digitalWrite(READY_LED_PIN, LOW);
+    //Read last state from memory...
+    EEPROM.get(addr_ep1, tankDepth);
+    EEPROM.get(addr_ep2, offsetTank);
+
+    //For SmartThings configuration and callbacks
+    stLib.begin();
+    stLib.callbackForAction("status", &callbackStatus);
+    stLib.callbackForAction("reboot", &callbackReboot);
+    stLib.callbackForAction("info", &callbackInfo);
+
+    //Particle functions
+    Particle.function("signalLvl", signalLvl);
+    Particle.function("reboot", doReboot);
+
+    Particle.function("cTankDepth", pChangeTankDepth);
+    Particle.function("cOffsetTank", pChangeOffsetTank);
+
+    Particle.variable("tank1Level", tank1Level);
+    Particle.variable("tank2Level", tank2Level);
+    Particle.variable("offsetTank", offsetTank);
+    Particle.variable("tankDepth", tankDepth);
+
+    pinMode(LED_READY_PIN, OUTPUT);
+    digitalWrite(LED_READY_PIN, LOW);
 
     rangeTank1.init();
+    rangeTank2.init();
 }
 
-void loop() {
-    ledReadyOnOnce();
+void loop()
+{
+    checkWiFiReady();
+    stLib.process(); //Process possible messages from SmartThings
     processAngleTempReading();
-    processLevelTank(rangeTank1, tank1Level, numReadings, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth, offsetSensor);
-    processLevelTank(rangeTank2, tank2Level, numReadings, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth, offsetSensor);
+    processLevelTank(rangeTank1, tank1Level, numReadings, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth, offsetTank);
+    processLevelTank(rangeTank2, tank2Level, numReadings, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth, offsetTank);
     hasToPresentValues();
+    wifiSignalLvl = WiFi.RSSI();
     delay(50);
 }
 
-void ledReadyOnOnce() {
-    if (!ledRdyOn) {
-        ledRdyOn = 1;
-        digitalWrite(READY_LED_PIN, HIGH);
+// **** LOCAL FUNCTIONS **** //
+void checkWiFiReady()
+{
+    if (WiFi.ready() && connected == 0)
+    {
+        connected = 1;
+        digitalWrite(LED_READY_PIN, HIGH);
+        log("Ready!");
+    }
+    else if (!WiFi.ready() && connected == 1)
+    {
+        connected = 0;
+        digitalWrite(LED_READY_PIN, LOW);
     }
 }
 
-void hasToPresentValues() {
-    if (presentValues >= SENSORS) {
+void hasToPresentValues()
+{
+    if (presentValues >= SENSORS)
+    {
         presentValues = 0;
 
         String angle = "Angle : ";
@@ -88,28 +144,40 @@ void hasToPresentValues() {
         angle += "°";
         angle += ", Temp : ";
         angle += String(averageTemp);
-        angle += " °C";
+        angle += "°C";
         log(angle);
 
         String tank = "Tank 1, distance: ";
-        tank += String(averageTank1 - offsetSensor);
+        tank += String(averageTank1 - offsetTank);
+        tank += " cms, real distance: ";
+        tank += String(averageTank1);
+        tank += " cms, offset: ";
+        tank += String(offsetTank);
         tank += " cms, Level: ";
         tank += String(tank1Level);
-        tank += " %";
+        tank += "%";
         log(tank);
 
         tank = "Tank 2, distance: ";
-        tank += String(averageTank2 - offsetSensor);
+        tank += String(averageTank2 - offsetTank);
+        tank += " cms, real distance: ";
+        tank += String(averageTank2);
+        tank += " cms, offset: ";
+        tank += String(offsetTank);
         tank += " cms, Level: ";
-        tank += String(tank1Level);
-        tank += " %";
+        tank += String(tank2Level);
+        tank += "%";
         log(tank);
     }
 }
 
-void processAngleTempReading() {
-    if(readDeviceState(0x0C, &s)){
-        if (calculatingLegend == 1) {
+//For local processing...
+void processAngleTempReading()
+{
+    if (readDeviceState(0x0C, &s))
+    {
+        if (calculatingLegend == 1)
+        {
             log("[Angle] Calculating data, 1 minute to refresh...");
             calculatingLegend = 0;
         }
@@ -131,20 +199,23 @@ void processAngleTempReading() {
         averageTemp = totalTemp / numReadings;
 
         // if we're at the end of the array...
-        if (readIndexAngle >= numReadings) {
-          // ...wrap around to the beginning:
-          readIndexAngle = 0;
-          presentValues++;
+        if (readIndexAngle >= numReadings)
+        {
+            // ...wrap around to the beginning:
+            readIndexAngle = 0;
+            presentValues++;
         }
 
-        if(s.status_flags & 0b1000){
+        if (s.status_flags & 0b1000)
+        {
             clearStatusRegisters(0x0C);
             log("[Angle] Cleared Flags because of Reset Condition; Rescanning...");
         }
     }
 }
 
-void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetSensor) {
+void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank)
+{
     float cms = rangeTank.distCM();
 
     // subtract the last reading:
@@ -159,25 +230,126 @@ void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings,
     average = total / numReadings;
 
     // if we're at the end of the array...
-    if (readIndex >= numReadings) {
+    if (readIndex >= numReadings)
+    {
         // ...wrap around to the beginning:
         readIndex = 0;
         presentValues++;
 
-        float currentTankDepth = average - offsetSensor;
-        long pct = (currentTankDepth * 100) / tankDepth;
-        int pctLvl = round(pct);
-        if (pctLvl > 100) {
-            pctLvl = 100;
-        } else if (pctLvl < 0) {
-            pctLvl = 0;
+        float currentTankDepth = average - offsetTank;
+        if (currentTankDepth > -1)
+        {
+            long pct = (currentTankDepth * 100) / tankDepth;
+            int pctLvl = round(pct);
+            if (pctLvl > 100)
+            {
+                pctLvl = 100;
+            }
+            else if (pctLvl < 0)
+            {
+                pctLvl = 0;
+            }
+            //Invert the pctLvl
+            pctLvl = 100 - pctLvl;
+            tankLevel = pctLvl;
         }
-        //Invert the pctLvl
-        pctLvl = 100 - pctLvl;
-        tankLevel = pctLvl;
+        else
+        {
+            tankLevel = 0;
+        }
     }
 }
 
-void log(String msg) {
+int pChangeTankDepth(String command)
+{
+    return changeTankDepth(command.toInt());
+}
+
+int pChangeOffsetTank(String command)
+{
+    return changeOffsetTank(command.toInt());
+}
+
+int changeTankDepth(int changeTo)
+{
+    tankDepth = changeTo;
+    EEPROM.put(addr_ep1, tankDepth);
+    callbackStatus();
+    return tankDepth;
+}
+
+int changeOffsetTank(int changeTo)
+{
+    offsetTank = changeTo;
+    EEPROM.put(addr_ep2, offsetTank);
+    callbackStatus();
+    return offsetTank;
+}
+
+//Send to SmartThings  the current device status
+void notifyStatusToSTHub(String json)
+{
+    stLib.notifyHub(json);
+}
+
+//SmartThings callbacks
+String callbackStatus()
+{
+    String json = getStatusJson();
+    notifyStatusToSTHub(json);
+    return json;
+}
+
+String callbackReboot()
+{
+    System.reset();
+    return "";
+}
+
+String callbackInfo()
+{
+    stLib.showInfo();
+    log("WiFi connected to : " + String(WiFi.SSID()));
+    log("WiFi SignalLvl    : " + String(wifiSignalLvl));
+    log("Angle 1           : " + String(averageAngle) + "°");
+    log("Angle 1 - Temp 1  : " + String(averageTemp) + "°C");
+    log("Tank 1 level      : " + String(tank1Level) + "%");
+    log("Tank 2 level      : " + String(tank2Level) + "%");
+    return "ok";
+}
+
+//Particle functions
+int signalLvl(String cmd)
+{
+    return wifiSignalLvl;
+}
+
+int doReboot(String command)
+{
+    System.reset();
+}
+
+//Local helper functions
+//Build json string for status device
+String getStatusJson()
+{
+    String uptime;
+    stLib.getUpTime(uptime);
+
+    jsonDoc["signalLvl"] = wifiSignalLvl;
+    jsonDoc["angle1"] = averageAngle;
+    jsonDoc["angle1Temp"] = averageTemp;
+    jsonDoc["tank1lvl"] = tank1Level;
+    jsonDoc["tank2lvl"] = tank2Level;
+    jsonDoc["uptime"] = uptime.c_str();
+    char jsonChar[512];
+    //statusJson.printTo(jsonChar);
+    serializeJson(jsonDoc, jsonChar);
+    String jsonResult = String(jsonChar);
+    return jsonResult;
+}
+
+void log(String msg)
+{
     Serial.println(String("[SmartBit Metrics] " + msg));
 }

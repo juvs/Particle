@@ -1,2 +1,6 @@
 # Bin files
 *.bin
+target/
+lib/
+.vscode/
+projects/SmartBit_Metrics/src/SmartBit_Metrics.cpp
