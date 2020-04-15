@@ -92,11 +92,14 @@ void setup()
 
     Particle.function("cTankDepth", pChangeTankDepth);
     Particle.function("cOffsetTank", pChangeOffsetTank);
+    Particle.function("debugStatus", pDebugStatus);
 
     Particle.variable("tank1Level", tank1Level);
     Particle.variable("tank2Level", tank2Level);
     Particle.variable("offsetTank", offsetTank);
     Particle.variable("tankDepth", tankDepth);
+    Particle.variable("angle", averageAngle);
+    Particle.variable("temp", averageTemp);
 
     pinMode(LED_READY_PIN, OUTPUT);
     digitalWrite(LED_READY_PIN, LOW);
@@ -260,16 +263,6 @@ void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings,
     }
 }
 
-int pChangeTankDepth(String command)
-{
-    return changeTankDepth(command.toInt());
-}
-
-int pChangeOffsetTank(String command)
-{
-    return changeOffsetTank(command.toInt());
-}
-
 int changeTankDepth(int changeTo)
 {
     tankDepth = changeTo;
@@ -309,12 +302,14 @@ String callbackReboot()
 String callbackInfo()
 {
     stLib.showInfo();
-    log("WiFi connected to : " + String(WiFi.SSID()));
-    log("WiFi SignalLvl    : " + String(wifiSignalLvl));
-    log("Angle 1           : " + String(averageAngle) + "°");
-    log("Angle 1 - Temp 1  : " + String(averageTemp) + "°C");
-    log("Tank 1 level      : " + String(tank1Level) + "%");
-    log("Tank 2 level      : " + String(tank2Level) + "%");
+    log("WiFi connected to  : " + String(WiFi.SSID()));
+    log("WiFi SignalLvl     : " + String(wifiSignalLvl));
+    log("Angle 1            : " + String(averageAngle) + "°");
+    log("Angle 1 - Temp 1   : " + String(averageTemp) + "°C");
+    log("Tank 1 level       : " + String(tank1Level) + "%");
+    log("Tank 2 level       : " + String(tank2Level) + "%");
+    log("Tank depth config  : " + String(tankDepth) + "cm");
+    log("Tank offset config : " + String(offsetTank) + "cm");
     return "ok";
 }
 
@@ -327,6 +322,23 @@ int signalLvl(String cmd)
 int doReboot(String command)
 {
     System.reset();
+    return 0;
+}
+
+int pChangeTankDepth(String command)
+{
+    return changeTankDepth(command.toInt());
+}
+
+int pChangeOffsetTank(String command)
+{
+    return changeOffsetTank(command.toInt());
+}
+
+int pDebugStatus(String command)
+{
+    callbackInfo();
+    return 0;
 }
 
 //Local helper functions
@@ -341,6 +353,8 @@ String getStatusJson()
     jsonDoc["angle1Temp"] = averageTemp;
     jsonDoc["tank1lvl"] = tank1Level;
     jsonDoc["tank2lvl"] = tank2Level;
+    jsonDoc["offsetTank"] = offsetTank;
+    jsonDoc["tankDepth"] = tankDepth;
     jsonDoc["uptime"] = uptime.c_str();
     char jsonChar[512];
     //statusJson.printTo(jsonChar);
