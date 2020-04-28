@@ -9,7 +9,7 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-ApplicationWatchdog wd(20000, System.reset, 1536);
+ApplicationWatchdog wd(30000, System.reset, 1536);
 SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", "0.0.2");
 
 #define SENSORS 3
@@ -23,15 +23,13 @@ SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", "0.0.2"
 //Para el sensor del angulo magnetico del gas
 A1335State s;
 
-int const numReadings = NUM_READINGS;
-
 //For magnetic sensor
-int readingsAngle[numReadings]; // the readings from the
-int readIndexAngle = 0;         // the index of the current reading
-int totalAngle = 0;             // the running total
-int averageAngle = 0;           // the average
+int readingsAngle[NUM_READINGS]; // the readings from the
+int readIndexAngle = 0;          // the index of the current reading
+int totalAngle = 0;              // the running total
+int averageAngle = 0;            // the average
 
-int readingsTemp[numReadings];
+int readingsTemp[NUM_READINGS];
 int readIndexTemp = 0;
 int totalTemp = 0;
 int averageTemp = 0;
@@ -40,12 +38,12 @@ int averageTemp = 0;
 int tankDepth = 46; // depth in cms
 int offsetTank = 0; // offset from sensor to start lvl in cms (63)
 
-float readingsTank1[numReadings];
+float readingsTank1[NUM_READINGS];
 int readIndexTank1 = 0;
 float totalTank1 = 0;
 float averageTank1 = 0;
 
-float readingsTank2[numReadings];
+float readingsTank2[NUM_READINGS];
 int readIndexTank2 = 0;
 float totalTank2 = 0;
 float averageTank2 = 0;
@@ -113,8 +111,8 @@ void loop()
     checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
     processAngleTempReading();
-    processLevelTank(rangeTank1, tank1Level, numReadings, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth, offsetTank);
-    processLevelTank(rangeTank2, tank2Level, numReadings, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth, offsetTank);
+    processLevelTank(rangeTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, "tank1");
+    processLevelTank(rangeTank2, tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, "tank2");
     hasToPresentValues();
     wifiSignalLvl = WiFi.RSSI();
     delay(50);
@@ -198,11 +196,11 @@ void processAngleTempReading()
         // advance to the next position in the array:
         readIndexAngle = readIndexAngle + 1;
         // calculate the average:
-        averageAngle = totalAngle / numReadings;
-        averageTemp = totalTemp / numReadings;
+        averageAngle = totalAngle / NUM_READINGS;
+        averageTemp = totalTemp / NUM_READINGS;
 
         // if we're at the end of the array...
-        if (readIndexAngle >= numReadings)
+        if (readIndexAngle >= NUM_READINGS)
         {
             // ...wrap around to the beginning:
             readIndexAngle = 0;
@@ -217,33 +215,35 @@ void processAngleTempReading()
     }
 }
 
-void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, const int numReadings, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank)
+void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, float readings[], int &readIndex, float &total, float &average, String tankName)
 {
     float cms = rangeTank.distCM();
 
     // subtract the last reading:
-    total = total - readings[readIndex];
+    //total = total - readings[readIndex];
     // read from the sensor:
-    readings[readIndex] = cms;
+    //readings[readIndex] = cms;
     // add the reading to the total:
-    total = total + readings[readIndex];
+    total = total + cms;
     // advance to the next position in the array:
     readIndex = readIndex + 1;
     // calculate the average:
-    average = total / numReadings;
+    average = total / NUM_READINGS;
 
     // if we're at the end of the array...
-    if (readIndex >= numReadings)
+    if (readIndex >= NUM_READINGS)
     {
         // ...wrap around to the beginning:
         readIndex = 0;
+        total = 0;
         presentValues++;
 
+        Particle.publish(tankName + "-distance", String(average));
         float currentTankDepth = average - offsetTank;
         if (currentTankDepth > -1)
         {
             long pct = (currentTankDepth * 100) / tankDepth;
-            int pctLvl = round(pct);
+            int pctLvl = pct + 0.5; //round(pct);
             if (pctLvl > 100)
             {
                 pctLvl = 100;
