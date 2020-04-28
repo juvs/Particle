@@ -9,8 +9,10 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-ApplicationWatchdog wd(30000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", "0.0.2");
+String sbversion = "0.0.5";
+
+ApplicationWatchdog wd(60000, System.reset, 1536);
+SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
 
 #define SENSORS 3
 #define NUM_READINGS 120 // 1 minute of readings
@@ -35,8 +37,11 @@ int totalTemp = 0;
 int averageTemp = 0;
 
 //For tanks level
-int tankDepth = 46; // depth in cms
-int offsetTank = 0; // offset from sensor to start lvl in cms (63)
+int tankDepth1 = 46; // depth in cms
+int offsetTank1 = 0; // offset from sensor to start lvl in cms (63)
+
+int tankDepth2 = 46; // depth in cms
+int offsetTank2 = 0; // offset from sensor to start lvl in cms (63)
 
 float readingsTank1[NUM_READINGS];
 int readIndexTank1 = 0;
@@ -65,6 +70,8 @@ int connected = 0;
 //EEPROM Memory address
 int addr_ep1 = 0;
 int addr_ep2 = 10;
+int addr_ep3 = addr_ep2 + 10;
+int addr_ep4 = addr_ep3 + 10;
 
 //Json status response
 StaticJsonDocument<200> jsonDoc;
@@ -75,8 +82,10 @@ void setup()
     Serial.begin(9600);
 
     //Read last state from memory...
-    EEPROM.get(addr_ep1, tankDepth);
-    EEPROM.get(addr_ep2, offsetTank);
+    EEPROM.get(addr_ep1, tankDepth1);
+    EEPROM.get(addr_ep2, offsetTank1);
+    EEPROM.get(addr_ep3, tankDepth2);
+    EEPROM.get(addr_ep4, offsetTank2);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -88,14 +97,18 @@ void setup()
     Particle.function("signalLvl", signalLvl);
     Particle.function("reboot", doReboot);
 
-    Particle.function("cTankDepth", pChangeTankDepth);
-    Particle.function("cOffsetTank", pChangeOffsetTank);
+    Particle.function("cTankDepth1", pChangeTankDepth1);
+    Particle.function("cOffsetTank1", pChangeOffsetTank1);
+    Particle.function("cTankDepth2", pChangeTankDepth2);
+    Particle.function("cOffsetTank2", pChangeOffsetTank2);
     Particle.function("debugStatus", pDebugStatus);
 
     Particle.variable("tank1Level", tank1Level);
     Particle.variable("tank2Level", tank2Level);
-    Particle.variable("offsetTank", offsetTank);
-    Particle.variable("tankDepth", tankDepth);
+    Particle.variable("offsetTank1", offsetTank1);
+    Particle.variable("offsetTank2", offsetTank2);
+    Particle.variable("tankDepth1", tankDepth1);
+    Particle.variable("tankDepth2", tankDepth2);
     Particle.variable("angle", averageAngle);
     Particle.variable("temp", averageTemp);
 
@@ -111,8 +124,8 @@ void loop()
     checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
     processAngleTempReading();
-    processLevelTank(rangeTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, "tank1");
-    processLevelTank(rangeTank2, tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, "tank2");
+    processLevelTank(rangeTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
+    processLevelTank(rangeTank2, tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth2, offsetTank2, "tank2");
     hasToPresentValues();
     wifiSignalLvl = WiFi.RSSI();
     delay(50);
@@ -126,6 +139,7 @@ void checkWiFiReady()
         connected = 1;
         digitalWrite(LED_READY_PIN, HIGH);
         log("Ready!");
+        Particle.publish("version", sbversion);
     }
     else if (!WiFi.ready() && connected == 1)
     {
@@ -149,22 +163,22 @@ void hasToPresentValues()
         log(angle);
 
         String tank = "Tank 1, distance: ";
-        tank += String(averageTank1 - offsetTank);
+        tank += String(averageTank1 - offsetTank1);
         tank += " cms, real distance: ";
         tank += String(averageTank1);
         tank += " cms, offset: ";
-        tank += String(offsetTank);
+        tank += String(offsetTank1);
         tank += " cms, Level: ";
         tank += String(tank1Level);
         tank += "%";
         log(tank);
 
         tank = "Tank 2, distance: ";
-        tank += String(averageTank2 - offsetTank);
+        tank += String(averageTank2 - offsetTank2);
         tank += " cms, real distance: ";
         tank += String(averageTank2);
         tank += " cms, offset: ";
-        tank += String(offsetTank);
+        tank += String(offsetTank1);
         tank += " cms, Level: ";
         tank += String(tank2Level);
         tank += "%";
@@ -215,7 +229,7 @@ void processAngleTempReading()
     }
 }
 
-void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, float readings[], int &readIndex, float &total, float &average, String tankName)
+void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank, String tankName)
 {
     float cms = rangeTank.distCM();
 
@@ -238,7 +252,6 @@ void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, float readings[], int 
         total = 0;
         presentValues++;
 
-        Particle.publish(tankName + "-distance", String(average));
         float currentTankDepth = average - offsetTank;
         if (currentTankDepth > -1)
         {
@@ -258,25 +271,44 @@ void processLevelTank(HC_SR04 &rangeTank, int &tankLevel, float readings[], int 
         }
         else
         {
-            tankLevel = 0;
+            //tankLevel = 0;
+            //Mantain last value dont change...
         }
+        Particle.publish(tankName + "-distance", String(average));
+        Particle.publish(tankName + "-level", String(tankLevel));
     }
 }
 
-int changeTankDepth(int changeTo)
+int changeTankDepth1(int changeTo)
 {
-    tankDepth = changeTo;
-    EEPROM.put(addr_ep1, tankDepth);
+    tankDepth1 = changeTo;
+    EEPROM.put(addr_ep1, tankDepth1);
     callbackStatus();
-    return tankDepth;
+    return tankDepth1;
 }
 
-int changeOffsetTank(int changeTo)
+int changeOffsetTank1(int changeTo)
 {
-    offsetTank = changeTo;
-    EEPROM.put(addr_ep2, offsetTank);
+    offsetTank1 = changeTo;
+    EEPROM.put(addr_ep2, offsetTank1);
     callbackStatus();
-    return offsetTank;
+    return offsetTank1;
+}
+
+int changeTankDepth2(int changeTo)
+{
+    tankDepth2 = changeTo;
+    EEPROM.put(addr_ep3, tankDepth2);
+    callbackStatus();
+    return tankDepth2;
+}
+
+int changeOffsetTank2(int changeTo)
+{
+    offsetTank2 = changeTo;
+    EEPROM.put(addr_ep4, offsetTank2);
+    callbackStatus();
+    return offsetTank2;
 }
 
 //Send to SmartThings  the current device status
@@ -302,14 +334,19 @@ String callbackReboot()
 String callbackInfo()
 {
     stLib.showInfo();
-    log("WiFi connected to  : " + String(WiFi.SSID()));
-    log("WiFi SignalLvl     : " + String(wifiSignalLvl));
-    log("Angle 1            : " + String(averageAngle) + "°");
-    log("Angle 1 - Temp 1   : " + String(averageTemp) + "°C");
-    log("Tank 1 level       : " + String(tank1Level) + "%");
-    log("Tank 2 level       : " + String(tank2Level) + "%");
-    log("Tank depth config  : " + String(tankDepth) + "cm");
-    log("Tank offset config : " + String(offsetTank) + "cm");
+    log("WiFi connected to    : " + String(WiFi.SSID()));
+    log("WiFi SignalLvl       : " + String(wifiSignalLvl));
+    log("Angle 1              : " + String(averageAngle) + "°");
+    log("Angle 1 - Temp 1     : " + String(averageTemp) + "°C");
+    log("Tank 1 level         : " + String(tank1Level) + "%");
+    log("Tank 1 depth config  : " + String(tankDepth1) + "cm");
+    log("Tank 1 offset config : " + String(offsetTank1) + "cm");
+    log("Tank 2 level         : " + String(tank2Level) + "%");
+    log("Tank 2 depth config  : " + String(tankDepth2) + "cm");
+    log("Tank 2 offset config : " + String(offsetTank2) + "cm");
+
+    String json = getStatusJson();
+    Particle.publish("status", json);
     return "ok";
 }
 
@@ -325,14 +362,24 @@ int doReboot(String command)
     return 0;
 }
 
-int pChangeTankDepth(String command)
+int pChangeTankDepth1(String command)
 {
-    return changeTankDepth(command.toInt());
+    return changeTankDepth1(command.toInt());
 }
 
-int pChangeOffsetTank(String command)
+int pChangeOffsetTank1(String command)
 {
-    return changeOffsetTank(command.toInt());
+    return changeOffsetTank1(command.toInt());
+}
+
+int pChangeTankDepth2(String command)
+{
+    return changeTankDepth2(command.toInt());
+}
+
+int pChangeOffsetTank2(String command)
+{
+    return changeOffsetTank2(command.toInt());
 }
 
 int pDebugStatus(String command)
@@ -351,11 +398,14 @@ String getStatusJson()
     jsonDoc["signalLvl"] = wifiSignalLvl;
     jsonDoc["angle1"] = averageAngle;
     jsonDoc["angle1Temp"] = averageTemp;
-    jsonDoc["tank1lvl"] = tank1Level;
-    jsonDoc["tank2lvl"] = tank2Level;
-    jsonDoc["offsetTank"] = offsetTank;
-    jsonDoc["tankDepth"] = tankDepth;
+    jsonDoc["tank1Level"] = tank1Level;
+    jsonDoc["tank1Offset"] = offsetTank1;
+    jsonDoc["tank1Depth"] = tankDepth1;
+    jsonDoc["tank2Level"] = tank2Level;
+    jsonDoc["tank2Offset"] = offsetTank2;
+    jsonDoc["tank2Depth"] = tankDepth2;
     jsonDoc["uptime"] = uptime.c_str();
+    jsonDoc["version"] = sbversion;
     char jsonChar[512];
     //statusJson.printTo(jsonChar);
     serializeJson(jsonDoc, jsonChar);
