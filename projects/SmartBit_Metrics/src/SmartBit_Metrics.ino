@@ -9,7 +9,7 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-String sbversion = "0.0.5";
+String sbversion = "0.0.6";
 
 ApplicationWatchdog wd(60000, System.reset, 1536);
 SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
@@ -405,7 +405,7 @@ String getStatusJson()
     jsonDoc["tank2Offset"] = offsetTank2;
     jsonDoc["tank2Depth"] = tankDepth2;
     jsonDoc["uptime"] = uptime.c_str();
-    jsonDoc["version"] = sbversion;
+    jsonDoc["version"] = sbversion.c_str();
     char jsonChar[512];
     //statusJson.printTo(jsonChar);
     serializeJson(jsonDoc, jsonChar);
