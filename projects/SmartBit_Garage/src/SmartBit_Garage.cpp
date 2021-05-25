@@ -1,3 +1,8 @@
+/******************************************************/
+//       THIS IS A GENERATED FILE - DO NOT EDIT       //
+/******************************************************/
+
+#line 1 "d:/projects/particle/src/projects/SmartBit_Garage/src/SmartBit_Garage.ino"
 /*
  * Project SmartBit_Garage
  * Description:
@@ -12,6 +17,33 @@
 #include "relay-lib.h"
 #include <clickButton.h>
 
+void setup();
+void loop();
+void checkWiFiReady();
+void checkOpenDoorTime();
+void updateRelayStatus();
+void monitorMagneticSwitch();
+void checkButtonOpenCloseStatus();
+int doOpen(String command);
+int doOverride(String command);
+int doLock(String command);
+int doUnlock(String command);
+int doReboot(String command);
+String callbackStatus();
+String callbackLock();
+String callbackUnlock();
+String callbackOverride();
+String callbackOpenCloseState();
+String callbackReboot();
+void callbackVariableSet(String param);
+void changeOpenCloseState();
+void changeOverrideMode();
+void changeLockMode(int changeTo);
+void notifyStatusToSTHub();
+void notifyGarageOpenTimeoutToSTHub();
+String getStatusJson();
+void log(String msg);
+#line 15 "d:/projects/particle/src/projects/SmartBit_Garage/src/SmartBit_Garage.ino"
 SYSTEM_THREAD(ENABLED);
 SYSTEM_MODE(MANUAL);
 
