@@ -8,7 +8,7 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-String sbversion = "0.0.7";
+String sbversion = "0.0.10";
 
 ApplicationWatchdog wd(60000, System.reset, 1536);
 SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
@@ -28,6 +28,14 @@ SerialLogHandler logHandler;
 #define TANK_1_PSS_TX D3
 
 ParticleSoftSerial serialTank1(TANK_1_PSS_RX, TANK_1_PSS_TX);
+
+//For reboot handle
+
+#define DELAY_BEFORE_REBOOT (15 * 1000)
+
+unsigned int rebootDelayMillis = DELAY_BEFORE_REBOOT;
+unsigned long rebootSync = millis();
+bool resetFlag = false;
 
 //For tanks level
 int tankDepth1 = 46; // depth in cms
@@ -109,6 +117,7 @@ void setup()
 
 void loop()
 {
+    checkForReboot();
     checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
 
@@ -121,6 +130,16 @@ void loop()
 }
 
 // **** LOCAL FUNCTIONS **** //
+
+void checkForReboot()
+{
+    if (resetFlag && (millis() - rebootSync >= rebootDelayMillis))
+    {
+        Particle.publish("reset", "by user", 300, PRIVATE);
+        System.reset();
+    }
+}
+
 void checkWiFiReady()
 {
     if (WiFi.ready() && connected == 0)
@@ -344,7 +363,7 @@ String callbackStatus()
 
 String callbackReboot()
 {
-    System.reset();
+    doReboot("");
     return "";
 }
 
@@ -353,8 +372,6 @@ String callbackInfo()
     stLib.showInfo();
     log("WiFi connected to    : " + String(WiFi.SSID()));
     log("WiFi SignalLvl       : " + String(wifiSignalLvl));
-    // log("Angle 1              : " + String(averageAngle) + "°");
-    // log("Angle 1 - Temp 1     : " + String(averageTemp) + "°C");
     log("Tank 1 level         : " + String(tank1Level) + "%");
     log("Tank 1 depth config  : " + String(tankDepth1) + "cm");
     log("Tank 1 offset config : " + String(offsetTank1) + "cm");
@@ -375,7 +392,8 @@ int signalLvl(String cmd)
 
 int doReboot(String command)
 {
-    System.reset();
+    resetFlag = true;
+    rebootSync = millis();
     return 0;
 }
 
@@ -413,8 +431,6 @@ String getStatusJson()
     stLib.getUpTime(uptime);
 
     jsonDoc["signalLvl"] = wifiSignalLvl;
-    // jsonDoc["angle1"] = averageAngle;
-    // jsonDoc["angle1Temp"] = averageTemp;
     jsonDoc["tank1Level"] = tank1Level;
     jsonDoc["tank1Offset"] = offsetTank1;
     jsonDoc["tank1Depth"] = tankDepth1;
