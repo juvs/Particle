@@ -17,6 +17,21 @@ SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversi
 #define NUM_READINGS 60  //Is really good this sensor  //120 //--> 1 minute of readings
 #define LED_READY_PIN D6 //Led listo
 
+//Lectura con 5 sensores Xkc-y25 Sin Contacto
+#define TANK1_LVL_100_PIN A0
+#define TANK1_LVL_75_PIN A1
+#define TANK1_LVL_50_PIN A2
+#define TANK1_LVL_25_PIN A3
+#define TANK1_LVL_0_PIN A4
+
+int readLvlT1100 = -1;
+int readLvlT175 = -1;
+int readLvlT150 = -1;
+int readLvlT125 = -1;
+int readLvlT10 = -1;
+
+int currentTankLvl1 = -1;
+
 const uint32_t baud = 9600;
 
 #define PROTOCOL SERIAL_8N1
@@ -112,6 +127,8 @@ void setup()
     pinMode(LED_READY_PIN, OUTPUT);
     digitalWrite(LED_READY_PIN, LOW);
 
+    pinMode(TANK1_LVL_100_PIN, INPUT);
+
     serialTank1.begin(baud, PROTOCOL);
 }
 
@@ -121,15 +138,33 @@ void loop()
     checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
 
-    readLevelTank(serialTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
-    readLevelTankSerial1(tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth2, offsetTank2, "tank2");
-    hasToPresentValues();
+    //readLevelTank(serialTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
+    //readLevelTankSerial1(tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth2, offsetTank2, "tank2");
+    //hasToPresentValues();
+    readLevelValue();
 
     wifiSignalLvl = WiFi.RSSI();
     delay(50);
 }
 
 // **** LOCAL FUNCTIONS **** //
+
+void readLevelValue()
+{
+    int lastReadLvlT1100 = readLvlT1100;
+    readLvlT1100 = digitalRead(TANK1_LVL_100_PIN);
+
+    if (readLvlT1100 != lastReadLvlT1100 && readLvlT1100 == 1)
+    {
+        Particle.publish("level", "100");
+        log("Level 100 reach!");
+    }
+    else if (readLvlT1100 != lastReadLvlT1100 && readLvlT1100 == 0)
+    {
+        Particle.publish("level", "Under 100");
+        log("Under level 100");
+    }
+}
 
 void checkForReboot()
 {
