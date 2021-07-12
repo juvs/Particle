@@ -1,3 +1,5 @@
+#include "A1335Lib.h"
+
 #include <SmartThingsLib.h>
 #include <SoftAPLib.h>
 #include <ArduinoJson.h>
@@ -32,17 +34,16 @@ unsigned int rebootDelayMillis = DELAY_BEFORE_REBOOT;
 unsigned long rebootSync = millis();
 bool resetFlag = false;
 
-//For tanks level
-int tankDepth1 = 46; // depth in cms
-int offsetTank1 = 0; // offset from sensor to start lvl in cms (63)
+//For magnetic sensor
+int readingsAngle[NUM_READINGS]; // the readings from the
+int readIndexAngle = 0;          // the index of the current reading
+int totalAngle = 0;              // the running total
+int averageAngle = 0;            // the average
 
-float readingsTank1[NUM_READINGS];
-int readIndexTank1 = 0;
-float totalTank1 = 0;
-float averageTank1 = 0;
-
-int tank1Level = 0L;
-int tank1Temp = 0;
+int readingsTemp[NUM_READINGS];
+int readIndexTemp = 0;
+int totalTemp = 0;
+int averageTemp = 0;
 
 int presentValues = -1; // to present values...
 
@@ -56,17 +57,19 @@ int connected = 0;
 int addr_ep1 = 0;
 int addr_ep2 = 10;
 
+//Para el sensor del angulo magnetico del gas
+A1335State s;
+
 //Json status response
 StaticJsonDocument<200> jsonDoc;
 
 void setup()
 {
-    Serial.begin(57600);
-    Serial1.begin(baud, PROTOCOL);
+    Wire.begin();
+    Serial.begin(9600);
 
     //Read last state from memory...
-    EEPROM.get(addr_ep1, tankDepth1);
-    EEPROM.get(addr_ep2, offsetTank1);
+    //    EEPROM.get(addr_ep1, tankDepth1);
 
     //For SmartThings configuration and callbacks
     stLib.begin();
@@ -78,19 +81,14 @@ void setup()
     Particle.function("signalLvl", signalLvl);
     Particle.function("reboot", doReboot);
 
-    Particle.function("cTankDepth1", pChangeTankDepth1);
-    Particle.function("cOffsetTank1", pChangeOffsetTank1);
     Particle.function("debugStatus", pDebugStatus);
 
-    Particle.variable("tank1Level", tank1Level);
-    Particle.variable("tank1Temp", tank1Temp);
-    Particle.variable("offsetTank1", offsetTank1);
-    Particle.variable("tankDepth1", tankDepth1);
+    Particle.variable("angle", averageAngle);
+    Particle.variable("temp", averageTemp);
 
     pinMode(LED_READY_PIN, OUTPUT);
     digitalWrite(LED_READY_PIN, LOW);
 
-    pinMode(D5, OUTPUT); //Activamos el trigger del sensor SEN0300
     digitalWrite(D5, HIGH);
 }
 
@@ -100,14 +98,64 @@ void loop()
     checkWiFiReady();
     stLib.process(); //Process possible messages from SmartThings
 
-    //digitalWrite(D5, HIGH);
-    readLevelTank(tank1Level, tank1Temp, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
+    processAngleTempReading();
     hasToPresentValues();
+    delay(500);
 
     wifiSignalLvl = WiFi.RSSI();
 }
 
 // **** LOCAL FUNCTIONS **** //
+
+void processAngleTempReading()
+{
+    if (readDeviceState(0x0C, &s))
+    {
+        // subtract the last reading:
+        totalAngle = totalAngle - readingsAngle[readIndexAngle];
+        totalTemp = totalTemp - readingsTemp[readIndexAngle];
+
+        SerialPrintFlags(s.angle_flags, ANGLE_FLAGS, 1);
+        Serial.print("\n");
+        SerialPrintFlags(s.status_flags, STATUS_FLAGS, 3);
+        Serial.print("\n");
+        SerialPrintFlags(s.err_flags, ERROR_FLAGS, 11);
+        Serial.print("\n");
+
+        log(String(s.isOK) + " isOk");
+        //log(String(s.angle_flags) + " af");
+        log(String(s.angle) + "°");
+        log(String(s.fieldStrength) + " fs");
+        log(String(s.temp) + "°C");
+
+        // read from the sensor:
+        readingsAngle[readIndexAngle] = round(s.angle);
+        readingsTemp[readIndexAngle] = round(s.temp);
+
+        // add the reading to the total:
+        totalAngle = totalAngle + readingsAngle[readIndexAngle];
+        totalTemp = totalTemp + readingsTemp[readIndexAngle];
+        // advance to the next position in the array:
+        readIndexAngle = readIndexAngle + 1;
+        // calculate the average:
+        averageAngle = totalAngle / NUM_READINGS;
+        averageTemp = totalTemp / NUM_READINGS;
+
+        // if we're at the end of the array...
+        if (readIndexAngle >= NUM_READINGS)
+        {
+            // ...wrap around to the beginning:
+            readIndexAngle = 0;
+            presentValues++;
+        }
+
+        if (s.status_flags & 0b1000)
+        {
+            clearStatusRegisters(0x0C);
+            Serial.println(F("Cleared Flags because of Reset Condition; Rescanning..."));
+        }
+    }
+}
 
 void checkForReboot()
 {
@@ -134,127 +182,6 @@ void checkWiFiReady()
     }
 }
 
-void caculateTankLevel(float distance, int &tankLevel, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank, String tankName)
-{
-    if (distance > 30)
-    {
-        distance = distance / 10;
-        // String tank = tankName + ", distance: ";
-        // tank += String(distance);
-        // tank += " cms";
-        // log(tank);
-
-        if (distance > -1)
-        {
-            total = total + distance;
-            // advance to the next position in the array:
-            readIndex = readIndex + 1;
-            // calculate the average:
-            average = total / NUM_READINGS;
-
-            // if we're at the end of the array...
-            if (readIndex >= NUM_READINGS)
-            {
-                // ...wrap around to the beginning:
-                readIndex = 0;
-                total = 0;
-                presentValues++;
-
-                float currentTankDepth = average - offsetTank;
-                if (currentTankDepth > -1)
-                {
-                    long pct = (currentTankDepth * 100) / tankDepth;
-                    int pctLvl = pct + 0.5; //round(pct);
-                    if (pctLvl > 100)
-                    {
-                        pctLvl = 100;
-                    }
-                    else if (pctLvl < 0)
-                    {
-                        pctLvl = 0;
-                    }
-                    //Invert the pctLvl
-                    pctLvl = 100 - pctLvl;
-                    tankLevel = pctLvl;
-                }
-                else
-                {
-                    //tankLevel = 0;
-                    //Mantain last value dont change...
-                }
-            }
-        }
-    }
-    else
-    {
-        log("Reading below the lower limit " + tankName);
-    }
-}
-
-void readLevelTank(int &tankLevel, int &tankTemp, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank, String tankName)
-{
-
-    char col;
-    unsigned char buffer_RTT[6] = {};
-    int distance = 0;
-    float temp = 0;
-    int Tflag = 0;
-
-    //Trigger
-    digitalWrite(D5, LOW);
-    delay(10);
-    digitalWrite(D5, HIGH);
-    delay(60);
-
-    do
-    {
-        for (int j = 0; j <= 5; j++)
-        {
-            col = Serial1.read();
-            buffer_RTT[j] = (char)col;
-        }
-    } while (Serial1.read() == 0xff);
-
-    Serial1.flush();
-
-    if (buffer_RTT[0] == 0xff)
-    {
-        int cor;
-        cor = (buffer_RTT[0] + buffer_RTT[1] + buffer_RTT[2] + buffer_RTT[3] + buffer_RTT[4]) & 0x00FF; //Check
-        // log(String(cor) + " cor");
-        // log(String(buffer_RTT[5]) + " buffer_RTT[5]");
-
-        if (buffer_RTT[5] == cor)
-        {
-            distance = (buffer_RTT[1] << 8) + buffer_RTT[2];
-            Tflag = buffer_RTT[3] & 0x80;
-            if (Tflag == 0x80)
-            {
-                buffer_RTT[3] = buffer_RTT[3] ^ 0x80;
-            }
-            temp = (buffer_RTT[3] << 8) + buffer_RTT[4];
-            temp = temp / 10;
-            tankTemp = (int)temp;
-            caculateTankLevel(distance, tankLevel, readings, readIndex, total, average, tankDepth, offsetTank, tankName);
-        }
-        else
-        {
-            distance = 0;
-            temp = 0;
-        }
-        delay(500);
-    }
-    // log("distance : ");
-    // log(String(distance) + " mm"); //Output distance unit mm
-    // log("temperature: ");
-    // if (Tflag == 0x80)
-    // {
-    //     log("-");
-    // }
-    // log(String(temp) + " C"); //Output temperature
-    // log("============================== ");
-}
-
 void hasToPresentValues()
 {
     if (presentValues == -1)
@@ -267,37 +194,27 @@ void hasToPresentValues()
     {
         presentValues = -1;
 
-        String tank = "Tank 1, distance: ";
-        tank += String(averageTank1 - offsetTank1);
-        tank += " cms, real distance: ";
-        tank += String(averageTank1);
-        tank += " cms, offset: ";
-        tank += String(offsetTank1);
-        tank += " cms, Level: ";
-        tank += String(tank1Level);
-        tank += "%";
-        log(tank);
+        String angle = "Angle: ";
+        angle += String(averageAngle);
+        angle += "°";
+        angle += ", Temp: ";
+        angle += String(averageTemp);
+        angle += "°C";
 
-        Particle.publish("tank1-distance", String(averageTank1));
-        Particle.publish("tank1-level", String(tank1Level));
+        log(angle);
+
+        Particle.publish("averageAngle", String(averageAngle));
+        Particle.publish("averageTemp", String(averageTemp));
     }
 }
 
-int changeTankDepth1(int changeTo)
-{
-    tankDepth1 = changeTo;
-    EEPROM.put(addr_ep1, tankDepth1);
-    callbackStatus();
-    return tankDepth1;
-}
-
-int changeOffsetTank1(int changeTo)
-{
-    offsetTank1 = changeTo;
-    EEPROM.put(addr_ep2, offsetTank1);
-    callbackStatus();
-    return offsetTank1;
-}
+// int changeTankDepth1(int changeTo)
+// {
+//     tankDepth1 = changeTo;
+//     EEPROM.put(addr_ep1, tankDepth1);
+//     callbackStatus();
+//     return tankDepth1;
+// }
 
 //Send to SmartThings  the current device status
 void notifyStatusToSTHub(String json)
@@ -324,9 +241,8 @@ String callbackInfo()
     stLib.showInfo();
     log("WiFi connected to    : " + String(WiFi.SSID()));
     log("WiFi SignalLvl       : " + String(wifiSignalLvl));
-    log("Tank 1 level         : " + String(tank1Level) + "%");
-    log("Tank 1 depth config  : " + String(tankDepth1) + "cm");
-    log("Tank 1 offset config : " + String(offsetTank1) + "cm");
+    log("Angle                : " + String(averageAngle) + "°");
+    log("Temp                 : " + String(averageTemp) + "°C");
 
     String json = getStatusJson();
     Particle.publish("status", json);
@@ -346,15 +262,10 @@ int doReboot(String command)
     return 0;
 }
 
-int pChangeTankDepth1(String command)
-{
-    return changeTankDepth1(command.toInt());
-}
-
-int pChangeOffsetTank1(String command)
-{
-    return changeOffsetTank1(command.toInt());
-}
+// int pChangeTankDepth1(String command)
+// {
+//     return changeTankDepth1(command.toInt());
+// }
 
 int pDebugStatus(String command)
 {
@@ -370,9 +281,8 @@ String getStatusJson()
     stLib.getUpTime(uptime);
 
     jsonDoc["signalLvl"] = wifiSignalLvl;
-    jsonDoc["tank1Level"] = tank1Level;
-    jsonDoc["tank1Offset"] = offsetTank1;
-    jsonDoc["tank1Depth"] = tankDepth1;
+    jsonDoc["averageAngle"] = averageAngle;
+    jsonDoc["averageTemp"] = averageTemp;
     jsonDoc["uptime"] = uptime.c_str();
     jsonDoc["version"] = sbversion.c_str();
     char jsonChar[512];
