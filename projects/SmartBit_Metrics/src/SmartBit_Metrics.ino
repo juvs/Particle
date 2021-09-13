@@ -296,8 +296,8 @@ void hasToPresentValues()
         tank += "%";
         log(tank);
 
-        Particle.publish("tank1-distance", String(averageTank1));
-        Particle.publish("tank1-level", String(tank1Level));
+        // Particle.publish("tank1-distance", String(averageTank1));
+        // Particle.publish("tank1-level", String(tank1Level));
 
         tank = "Tank 2, distance: ";
         tank += String(averageTank2 - offsetTank2);
@@ -310,8 +310,8 @@ void hasToPresentValues()
         tank += "%";
         log(tank);
 
-        Particle.publish("tank2-distance", String(averageTank2));
-        Particle.publish("tank2-level", String(tank2Level));
+        // Particle.publish("tank2-distance", String(averageTank2));
+        // Particle.publish("tank2-level", String(tank2Level));
     }
 }
 
