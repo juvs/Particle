@@ -135,7 +135,7 @@ void checkForReboot()
 {
     if (resetFlag && (millis() - rebootSync >= rebootDelayMillis))
     {
-        Particle.publish("reset", "by user", 300, PRIVATE);
+        // Particle.publish("reset", "by user", 300, PRIVATE);
         System.reset();
     }
 }
@@ -147,7 +147,7 @@ void checkWiFiReady()
         connected = 1;
         digitalWrite(LED_READY_PIN, HIGH);
         log("Ready!");
-        Particle.publish("version", sbversion);
+        // Particle.publish("version", sbversion);
     }
     else if (!WiFi.ready() && connected == 1)
     {
