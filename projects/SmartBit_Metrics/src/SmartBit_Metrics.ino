@@ -8,14 +8,20 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-String sbversion = "0.0.10";
+ApplicationWatchdog *wd;
 
-ApplicationWatchdog wd(60000, System.reset, 1536);
-SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
+void watchdogHandler()
+{
+    System.reset();
+}
+
+String sbversion = "0.0.11";
+
+SmartThingsLib stLib("smartbit-metrics-cisterna", "SmartBit Metrics Cisterna", "SmartBit", sbversion);
 
 #define SENSORS 2
-#define NUM_READINGS 60  //Is really good this sensor  //120 //--> 1 minute of readings
-#define LED_READY_PIN D6 //Led listo
+#define NUM_READINGS 60  // Is really good this sensor  //120 //--> 1 minute of readings
+#define LED_READY_PIN D6 // Led listo
 
 const uint32_t baud = 9600;
 
@@ -24,7 +30,7 @@ const uint32_t baud = 9600;
 SerialLogHandler logHandler;
 #endif
 
-//For reboot handle
+// For reboot handle
 
 #define DELAY_BEFORE_REBOOT (15 * 1000)
 
@@ -32,7 +38,7 @@ unsigned int rebootDelayMillis = DELAY_BEFORE_REBOOT;
 unsigned long rebootSync = millis();
 bool resetFlag = false;
 
-//For tanks level
+// For tanks level
 int tankDepth1 = 46; // depth in cms
 int offsetTank1 = 0; // offset from sensor to start lvl in cms (63)
 
@@ -46,35 +52,36 @@ int tank1Temp = 0;
 
 int presentValues = -1; // to present values...
 
-//3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
+// 3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
 int wifiSignalLvl = 3;
 
-//For connected flag
+// For connected flag
 int connected = 0;
 
-//EEPROM Memory address
+// EEPROM Memory address
 int addr_ep1 = 0;
 int addr_ep2 = 10;
 
-//Json status response
+// Json status response
 StaticJsonDocument<200> jsonDoc;
 
 void setup()
 {
+    wd = new ApplicationWatchdog(60000, watchdogHandler, 1536);
     Serial.begin(57600);
     Serial1.begin(baud, PROTOCOL);
 
-    //Read last state from memory...
+    // Read last state from memory...
     EEPROM.get(addr_ep1, tankDepth1);
     EEPROM.get(addr_ep2, offsetTank1);
 
-    //For SmartThings configuration and callbacks
+    // For SmartThings configuration and callbacks
     stLib.begin();
     stLib.callbackForAction("status", &callbackStatus);
     stLib.callbackForAction("reboot", &callbackReboot);
     stLib.callbackForAction("info", &callbackInfo);
 
-    //Particle functions
+    // Particle functions
     Particle.function("signalLvl", signalLvl);
     Particle.function("reboot", doReboot);
 
@@ -90,7 +97,7 @@ void setup()
     pinMode(LED_READY_PIN, OUTPUT);
     digitalWrite(LED_READY_PIN, LOW);
 
-    pinMode(D5, OUTPUT); //Activamos el trigger del sensor SEN0300
+    pinMode(D5, OUTPUT); // Activamos el trigger del sensor SEN0300
     digitalWrite(D5, HIGH);
 }
 
@@ -98,9 +105,9 @@ void loop()
 {
     checkForReboot();
     checkWiFiReady();
-    stLib.process(); //Process possible messages from SmartThings
+    stLib.process(); // Process possible messages from SmartThings
 
-    //digitalWrite(D5, HIGH);
+    // digitalWrite(D5, HIGH);
     readLevelTank(tank1Level, tank1Temp, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
     hasToPresentValues();
 
@@ -164,7 +171,7 @@ void caculateTankLevel(float distance, int &tankLevel, float readings[], int &re
                 if (currentTankDepth > -1)
                 {
                     long pct = (currentTankDepth * 100) / tankDepth;
-                    int pctLvl = pct + 0.5; //round(pct);
+                    int pctLvl = pct + 0.5; // round(pct);
                     if (pctLvl > 100)
                     {
                         pctLvl = 100;
@@ -173,14 +180,14 @@ void caculateTankLevel(float distance, int &tankLevel, float readings[], int &re
                     {
                         pctLvl = 0;
                     }
-                    //Invert the pctLvl
+                    // Invert the pctLvl
                     pctLvl = 100 - pctLvl;
                     tankLevel = pctLvl;
                 }
                 else
                 {
-                    //tankLevel = 0;
-                    //Mantain last value dont change...
+                    // tankLevel = 0;
+                    // Mantain last value dont change...
                 }
             }
         }
@@ -200,7 +207,7 @@ void readLevelTank(int &tankLevel, int &tankTemp, float readings[], int &readInd
     float temp = 0;
     int Tflag = 0;
 
-    //Trigger
+    // Trigger
     digitalWrite(D5, LOW);
     delay(10);
     digitalWrite(D5, HIGH);
@@ -220,7 +227,7 @@ void readLevelTank(int &tankLevel, int &tankTemp, float readings[], int &readInd
     if (buffer_RTT[0] == 0xff)
     {
         int cor;
-        cor = (buffer_RTT[0] + buffer_RTT[1] + buffer_RTT[2] + buffer_RTT[3] + buffer_RTT[4]) & 0x00FF; //Check
+        cor = (buffer_RTT[0] + buffer_RTT[1] + buffer_RTT[2] + buffer_RTT[3] + buffer_RTT[4]) & 0x00FF; // Check
         // log(String(cor) + " cor");
         // log(String(buffer_RTT[5]) + " buffer_RTT[5]");
 
@@ -278,8 +285,8 @@ void hasToPresentValues()
         tank += "%";
         log(tank);
 
-        Particle.publish("tank1-distance", String(averageTank1));
-        Particle.publish("tank1-level", String(tank1Level));
+        // Particle.publish("tank1-distance", String(averageTank1));
+        // Particle.publish("tank1-level", String(tank1Level));
     }
 }
 
@@ -299,13 +306,13 @@ int changeOffsetTank1(int changeTo)
     return offsetTank1;
 }
 
-//Send to SmartThings  the current device status
+// Send to SmartThings  the current device status
 void notifyStatusToSTHub(String json)
 {
     stLib.notifyHub(json);
 }
 
-//SmartThings callbacks
+// SmartThings callbacks
 String callbackStatus()
 {
     String json = getStatusJson();
@@ -333,7 +340,7 @@ String callbackInfo()
     return "ok";
 }
 
-//Particle functions
+// Particle functions
 int signalLvl(String cmd)
 {
     return wifiSignalLvl;
@@ -362,8 +369,8 @@ int pDebugStatus(String command)
     return 0;
 }
 
-//Local helper functions
-//Build json string for status device
+// Local helper functions
+// Build json string for status device
 String getStatusJson()
 {
     String uptime;
@@ -371,12 +378,13 @@ String getStatusJson()
 
     jsonDoc["signalLvl"] = wifiSignalLvl;
     jsonDoc["tank1Level"] = tank1Level;
+    jsonDoc["tank1Distance"] = averageTank1;
     jsonDoc["tank1Offset"] = offsetTank1;
     jsonDoc["tank1Depth"] = tankDepth1;
     jsonDoc["uptime"] = uptime.c_str();
     jsonDoc["version"] = sbversion.c_str();
     char jsonChar[512];
-    //statusJson.printTo(jsonChar);
+    // statusJson.printTo(jsonChar);
     serializeJson(jsonDoc, jsonChar);
     String jsonResult = String(jsonChar);
     return jsonResult;
