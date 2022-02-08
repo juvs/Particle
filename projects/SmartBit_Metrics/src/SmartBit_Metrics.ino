@@ -14,8 +14,8 @@ ApplicationWatchdog wd(60000, System.reset, 1536);
 SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
 
 #define SENSORS 2
-#define NUM_READINGS 60  //Is really good this sensor  //120 //--> 1 minute of readings
-#define LED_READY_PIN D6 //Led listo
+#define NUM_READINGS 60  // Is really good this sensor  //120 //--> 1 minute of readings
+#define LED_READY_PIN D6 // Led listo
 
 const uint32_t baud = 9600;
 
@@ -29,7 +29,7 @@ SerialLogHandler logHandler;
 
 ParticleSoftSerial serialTank1(TANK_1_PSS_RX, TANK_1_PSS_TX);
 
-//For reboot handle
+// For reboot handle
 
 #define DELAY_BEFORE_REBOOT (15 * 1000)
 
@@ -37,7 +37,7 @@ unsigned int rebootDelayMillis = DELAY_BEFORE_REBOOT;
 unsigned long rebootSync = millis();
 bool resetFlag = false;
 
-//For tanks level
+// For tanks level
 int tankDepth1 = 46; // depth in cms
 int offsetTank1 = 0; // offset from sensor to start lvl in cms (63)
 
@@ -59,19 +59,19 @@ int tank2Level = 0L;
 
 int presentValues = -1; // to present values...
 
-//3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
+// 3 is Unknow, from -127 (weak) to -1dB (strong), 1 Wi-Fi chip error and 2 time-out error
 int wifiSignalLvl = 3;
 
-//For connected flag
+// For connected flag
 int connected = 0;
 
-//EEPROM Memory address
+// EEPROM Memory address
 int addr_ep1 = 0;
 int addr_ep2 = 10;
 int addr_ep3 = addr_ep2 + 10;
 int addr_ep4 = addr_ep3 + 10;
 
-//Json status response
+// Json status response
 StaticJsonDocument<200> jsonDoc;
 
 void setup()
@@ -80,19 +80,19 @@ void setup()
     Serial.begin(9600);
     Serial1.begin(9600);
 
-    //Read last state from memory...
+    // Read last state from memory...
     EEPROM.get(addr_ep1, tankDepth1);
     EEPROM.get(addr_ep2, offsetTank1);
     EEPROM.get(addr_ep3, tankDepth2);
     EEPROM.get(addr_ep4, offsetTank2);
 
-    //For SmartThings configuration and callbacks
+    // For SmartThings configuration and callbacks
     stLib.begin();
     stLib.callbackForAction("status", &callbackStatus);
     stLib.callbackForAction("reboot", &callbackReboot);
     stLib.callbackForAction("info", &callbackInfo);
 
-    //Particle functions
+    // Particle functions
     Particle.function("signalLvl", signalLvl);
     Particle.function("reboot", doReboot);
 
@@ -103,7 +103,9 @@ void setup()
     Particle.function("debugStatus", pDebugStatus);
 
     Particle.variable("tank1Level", tank1Level);
+    Particle.variable("tank1Distance", averageTank1);
     Particle.variable("tank2Level", tank2Level);
+    Particle.variable("tank2Distance", averageTank2);
     Particle.variable("offsetTank1", offsetTank1);
     Particle.variable("offsetTank2", offsetTank2);
     Particle.variable("tankDepth1", tankDepth1);
@@ -119,7 +121,7 @@ void loop()
 {
     checkForReboot();
     checkWiFiReady();
-    stLib.process(); //Process possible messages from SmartThings
+    stLib.process(); // Process possible messages from SmartThings
 
     readLevelTank(serialTank1, tank1Level, readingsTank1, readIndexTank1, totalTank1, averageTank1, tankDepth1, offsetTank1, "tank1");
     readLevelTankSerial1(tank2Level, readingsTank2, readIndexTank2, totalTank2, averageTank2, tankDepth2, offsetTank2, "tank2");
@@ -186,7 +188,7 @@ void caculateTankLevel(float distance, int &tankLevel, float readings[], int &re
                 if (currentTankDepth > -1)
                 {
                     long pct = (currentTankDepth * 100) / tankDepth;
-                    int pctLvl = pct + 0.5; //round(pct);
+                    int pctLvl = pct + 0.5; // round(pct);
                     if (pctLvl > 100)
                     {
                         pctLvl = 100;
@@ -195,14 +197,14 @@ void caculateTankLevel(float distance, int &tankLevel, float readings[], int &re
                     {
                         pctLvl = 0;
                     }
-                    //Invert the pctLvl
+                    // Invert the pctLvl
                     pctLvl = 100 - pctLvl;
                     tankLevel = pctLvl;
                 }
                 else
                 {
-                    //tankLevel = 0;
-                    //Mantain last value dont change...
+                    // tankLevel = 0;
+                    // Mantain last value dont change...
                 }
             }
         }
@@ -347,13 +349,13 @@ int changeOffsetTank2(int changeTo)
     return offsetTank2;
 }
 
-//Send to SmartThings  the current device status
+// Send to SmartThings  the current device status
 void notifyStatusToSTHub(String json)
 {
     stLib.notifyHub(json);
 }
 
-//SmartThings callbacks
+// SmartThings callbacks
 String callbackStatus()
 {
     String json = getStatusJson();
@@ -384,7 +386,7 @@ String callbackInfo()
     return "ok";
 }
 
-//Particle functions
+// Particle functions
 int signalLvl(String cmd)
 {
     return wifiSignalLvl;
@@ -423,8 +425,8 @@ int pDebugStatus(String command)
     return 0;
 }
 
-//Local helper functions
-//Build json string for status device
+// Local helper functions
+// Build json string for status device
 String getStatusJson()
 {
     String uptime;
@@ -432,15 +434,17 @@ String getStatusJson()
 
     jsonDoc["signalLvl"] = wifiSignalLvl;
     jsonDoc["tank1Level"] = tank1Level;
+    jsonDoc["tank1Distance"] = averageTank1;
     jsonDoc["tank1Offset"] = offsetTank1;
     jsonDoc["tank1Depth"] = tankDepth1;
     jsonDoc["tank2Level"] = tank2Level;
+    jsonDoc["tank2Distance"] = averageTank2;
     jsonDoc["tank2Offset"] = offsetTank2;
     jsonDoc["tank2Depth"] = tankDepth2;
     jsonDoc["uptime"] = uptime.c_str();
     jsonDoc["version"] = sbversion.c_str();
     char jsonChar[512];
-    //statusJson.printTo(jsonChar);
+    // statusJson.printTo(jsonChar);
     serializeJson(jsonDoc, jsonChar);
     String jsonResult = String(jsonChar);
     return jsonResult;
