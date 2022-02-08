@@ -8,9 +8,15 @@ STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
 
-String sbversion = "0.0.10";
+ApplicationWatchdog *wd;
 
-ApplicationWatchdog wd(60000, System.reset, 1536);
+void watchdogHandler()
+{
+    System.reset();
+}
+
+String sbversion = "0.0.11";
+
 SmartThingsLib stLib("smartbit-metrics", "SmartBit Metrics", "SmartBit", sbversion);
 
 #define SENSORS 2
@@ -76,6 +82,7 @@ StaticJsonDocument<200> jsonDoc;
 
 void setup()
 {
+    wd = new ApplicationWatchdog(60000, watchdogHandler, 1536);
     Wire.begin();
     Serial.begin(9600);
     Serial1.begin(9600);
@@ -103,9 +110,7 @@ void setup()
     Particle.function("debugStatus", pDebugStatus);
 
     Particle.variable("tank1Level", tank1Level);
-    Particle.variable("tank1Distance", averageTank1);
     Particle.variable("tank2Level", tank2Level);
-    Particle.variable("tank2Distance", averageTank2);
     Particle.variable("offsetTank1", offsetTank1);
     Particle.variable("offsetTank2", offsetTank2);
     Particle.variable("tankDepth1", tankDepth1);
