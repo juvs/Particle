@@ -1,3 +1,9 @@
+/******************************************************/
+//       THIS IS A GENERATED FILE - DO NOT EDIT       //
+/******************************************************/
+
+#include "Particle.h"
+#line 1 "d:/projects/particle/src/projects/SmartBit_Doorbell/src/SmartBit_DoorBell.ino"
 /*
  * Project SmartBit_DoorBell
  * Description:
@@ -13,6 +19,33 @@
 #include <Base64.h>
 
 // Initialize SoftAP for WiFi management
+void watchdogHandler();
+void setup();
+void loop();
+void checkForReboot();
+void checkWiFiReady();
+void checkButtonBellStatus();
+void updateRelayStatus();
+void playTTS();
+int ringSonoff();
+void doNotifyST(void);
+void initPulseRelay(bool particlePub, bool ringL, bool ringS, bool playT, bool notifyST);
+void notifyStatusToSTHub(String json);
+String callbackStatus();
+String callbackReboot();
+String callbackInfo();
+String callbackTest();
+void callbackVariableSet(String var);
+int signalLvl(String cmd);
+int doReboot(String cmd);
+int test(String cmd);
+int pDebugStatus(String command);
+String getStatusJson();
+String getInfoJson();
+void log(String msg);
+void getStringFromEEPROM(int addr, String &value);
+void setStringToEEPROM(int addr, String data);
+#line 16 "d:/projects/particle/src/projects/SmartBit_Doorbell/src/SmartBit_DoorBell.ino"
 STARTUP(softap_set_application_page_handler(SoftAPLib::getPage, nullptr));
 
 SYSTEM_THREAD(ENABLED);
@@ -33,7 +66,7 @@ void watchdogHandler()
     System.reset();
 }
 
-SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.13");
+SmartThingsLib stLib("smartbit-doorbell", "SmartBit Doorbell", "SmartBit", "1.0.12");
 ClickButton buttonBell(BUTTON_BELL_PIN, LOW, CLICKBTN_PULLUP);
 
 // For reboot handle
