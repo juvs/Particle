@@ -15,7 +15,7 @@ void watchdogHandler()
     System.reset();
 }
 
-String sbversion = "0.0.11";
+String sbversion = "0.0.12";
 
 SmartThingsLib stLib("smartbit-metrics-cisterna", "SmartBit Metrics Cisterna", "SmartBit", sbversion);
 
@@ -41,6 +41,7 @@ bool resetFlag = false;
 // For tanks level
 int tankDepth1 = 46; // depth in cms
 int offsetTank1 = 0; // offset from sensor to start lvl in cms (63)
+double lastDistance = 0;
 
 float readingsTank1[NUM_READINGS];
 int readIndexTank1 = 0;
@@ -93,6 +94,7 @@ void setup()
     Particle.variable("tank1Temp", tank1Temp);
     Particle.variable("offsetTank1", offsetTank1);
     Particle.variable("tankDepth1", tankDepth1);
+    Particle.variable("lastDistance", lastDistance);
 
     pinMode(LED_READY_PIN, OUTPUT);
     digitalWrite(LED_READY_PIN, LOW);
@@ -143,6 +145,7 @@ void checkWiFiReady()
 
 void caculateTankLevel(float distance, int &tankLevel, float readings[], int &readIndex, float &total, float &average, int tankDepth, int offsetTank, String tankName)
 {
+    lastDistance = distance;
     if (distance > 30)
     {
         distance = distance / 10;
